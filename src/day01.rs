@@ -16,16 +16,14 @@ fn calc_fuel_recursive(mass: &i32) -> i32 {
     return total;
 }
 
-pub fn part1() {
+pub fn part1() -> i32 {
     let data: Vec<i32> = util::read_data("day01_input.txt");
-    let fuel: i32 = data.iter().map(calc_fuel).sum();
-    println!("day01part1: {}", fuel);
+    data.iter().map(calc_fuel).sum()
 }
 
-pub fn part2() {
+pub fn part2() -> i32 {
     let data: Vec<i32> = util::read_data("day01_input.txt");
-    let fuel: i32 = data.iter().map(calc_fuel_recursive).sum();
-    println!("day01part2: {}", fuel);
+    data.iter().map(calc_fuel_recursive).sum()
 }
 
 #[cfg(test)]
@@ -41,9 +39,19 @@ mod tests {
     }
 
     #[test]
+    fn test_part1() {
+        assert_eq!(part1(), 3224048);
+    }
+
+    #[test]
     fn test_calc_fuel_recursive() {
         assert_eq!(calc_fuel_recursive(&14), 2);
         assert_eq!(calc_fuel_recursive(&1969), 966);
         assert_eq!(calc_fuel_recursive(&100756), 50346);
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(part2(), 4833211);
     }
 }
