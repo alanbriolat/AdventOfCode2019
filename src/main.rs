@@ -2,6 +2,7 @@ use std::time::Instant;
 
 mod util;
 mod day01;
+mod day02;
 
 macro_rules! run {
     ($l:expr) => {
@@ -15,4 +16,6 @@ macro_rules! run {
 fn main() {
     run!(day01::part1());
     run!(day01::part2());
+    run!(day02::part1());
+    run!(day02::part2());
 }
