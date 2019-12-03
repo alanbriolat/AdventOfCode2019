@@ -54,11 +54,20 @@ struct Line2D {
     end: Point2D,
 }
 
+impl Line2D {
+    fn manhattan_length(&self) -> i32 {
+        (self.end - self.start).manhattan_length()
+    }
+}
+
 #[derive(Debug,Eq,PartialEq)]
 enum Axis {
     Horizontal,
     Vertical,
 }
+
+#[derive(Debug,Eq,Hash,PartialEq)]
+struct Intersection(Point2D, i32, i32);
 
 impl Line2D {
     fn axis(&self) -> Option<Axis> {
@@ -79,6 +88,43 @@ impl Line2D {
             point!(max((self.start).x, (self.end).x), max((self.start).y, (self.end).y)),
         )
     }
+
+    fn intersection_with(&self, other: &Line2D) -> Option<Intersection> {
+        // Only allow axis-aligned lines, will panic if not
+        let axis_self = self.axis().unwrap();
+        let axis_other = other.axis().unwrap();
+        // Parallel lines never intersect!
+        if axis_self == axis_other {
+            return None;
+        };
+        // Make orientation predictable
+        let (a, b) = if axis_self == Axis::Horizontal {
+            (self, other)
+        } else {
+            (other, self)
+        };
+        // Vertical line's X coordinate within horizontal line's range
+        let overlap_x = (min(a.start.x, a.end.x) ..= max(a.start.x, a.end.x)).contains(&b.start.x);
+        // Horizontal line's Y coordinate within vertical line's range
+        let overlap_y = (min(b.start.y, b.end.y) ..= max(b.start.y, b.end.y)).contains(&a.start.y);
+
+        if overlap_x && overlap_y {
+            let p = point!(b.start.x, a.start.y);
+            if axis_self == Axis::Horizontal {
+                Some(Intersection(p, (p.x - self.start.x).abs(), (p.y - other.start.y).abs()))
+            } else {
+                Some(Intersection(p, (p.y - self.start.y).abs(), (p.x - other.start.x).abs()))
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PathSegment {
+    next: Line2D,
+    cost: i32,
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -158,6 +204,32 @@ fn find_intersections(a: &[Line2D], b: &[Line2D], f: impl Fn(&Line2D, &Line2D) -
         .collect()
 }
 
+fn find_intersections_with_costs(a: &[Line2D], b: &[Line2D]) -> Vec<Intersection> {
+    let a_with_costs: Vec<(&Line2D, i32)> =
+        a.iter()
+            .scan(0, |state, l| {
+                let old_state = *state;
+                *state += l.manhattan_length();
+                Some((l, old_state))
+            })
+            .collect();
+    let b_with_costs: Vec<(&Line2D, i32)> =
+        b.iter()
+            .scan(0, |state, l| {
+                let old_state = *state;
+                *state += l.manhattan_length();
+                Some((l, old_state))
+            })
+            .collect();
+    iproduct!(a_with_costs, b_with_costs)
+        .filter_map(|((a_line, a_base), (b_line, b_base))| {
+            a_line.intersection_with(b_line).and_then(|Intersection(p, a_cost, b_cost)| {
+                Some(Intersection(p, a_base + a_cost, b_base + b_cost))
+            })
+        })
+        .collect()
+}
+
 pub fn part1() -> i32 {
     let wires: Vec<Wire> = util::read_data("day03_input.txt");
     let wire1 = &wires[0];
@@ -174,7 +246,18 @@ pub fn part1() -> i32 {
 }
 
 pub fn part2() -> i32 {
-    0
+    let wires: Vec<Wire> = util::read_data("day03_input.txt");
+    let wire1 = &wires[0];
+    let wire2 = &wires[1];
+    let intersections = find_intersections_with_costs(&wire1.lines, &wire2.lines);
+    let mut distances: Vec<i32> =
+        intersections
+        .iter()
+        .map(|Intersection(_, a_cost, b_cost)| a_cost + b_cost)
+        .filter(|&x| x > 0)
+        .collect();
+    distances.sort();
+    *distances.first().unwrap()
 }
 
 #[cfg(test)]
@@ -260,5 +343,10 @@ mod tests {
     #[test]
     fn test_part1() {
         assert_eq!(part1(), 860);
+    }
+
+    #[test]
+    fn test_part2() {
+        assert_eq!(part2(), 9238);
     }
 }
