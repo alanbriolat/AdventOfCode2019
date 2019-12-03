@@ -6,36 +6,53 @@ use std::str::FromStr;
 
 use crate::util;
 
-#[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
-struct Vec2D(i32, i32);
-
-impl Vec2D {
-    fn manhattan_length(&self) -> i32 {
-        (self.0).abs() + (self.1).abs()
-    }
+macro_rules! vector {
+    ($x:expr, $y:expr) => { Vector2D{x: $x, y: $y} };
 }
 
 #[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
-struct Point2D(i32, i32);
+struct Vector2D {
+    x: i32,
+    y: i32,
+}
 
-impl ops::Add<Vec2D> for Point2D {
+impl Vector2D {
+    fn manhattan_length(&self) -> i32 {
+        self.x.abs() + self.y.abs()
+    }
+}
+
+macro_rules! point {
+    ($x:expr, $y:expr) => { Point2D{x: $x, y: $y} };
+}
+
+#[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
+struct Point2D {
+    x: i32,
+    y: i32,
+}
+
+impl ops::Add<Vector2D> for Point2D {
     type Output = Point2D;
 
-    fn add(self, rhs: Vec2D) -> Point2D {
-        Point2D(self.0 + rhs.0, self.1 + rhs.1)
+    fn add(self, rhs: Vector2D) -> Point2D {
+        point!(self.x + rhs.x, self.y + rhs.y)
     }
 }
 
 impl ops::Sub<Point2D> for Point2D {
-    type Output = Vec2D;
+    type Output = Vector2D;
 
-    fn sub(self, rhs: Point2D) -> Vec2D {
-        Vec2D(self.0 - rhs.0, self.1 - rhs.1)
+    fn sub(self, rhs: Point2D) -> Vector2D {
+        vector!(self.x - rhs.x, self.y - rhs.y)
     }
 }
 
 #[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
-struct Line2D(Point2D, Point2D);
+struct Line2D {
+    start: Point2D,
+    end: Point2D,
+}
 
 #[derive(Debug,Eq,PartialEq)]
 enum Axis {
@@ -46,9 +63,9 @@ enum Axis {
 impl Line2D {
     fn axis(&self) -> Option<Axis> {
         // Aligned with axis 0 means axis 1 values are the same
-        let aligned_0 = (self.0).1 == (self.1).1;
+        let aligned_0 = (self.start).y == (self.end).y;
         // Aligned with axis 1 means axis 0 values are the same
-        let aligned_1 = (self.0).0 == (self.1).0;
+        let aligned_1 = (self.start).x == (self.end).x;
         match (aligned_0, aligned_1) {
             (true, false) => Some(Axis::Horizontal),
             (false, true) => Some(Axis::Vertical),
@@ -58,15 +75,15 @@ impl Line2D {
 
     fn bounding_box(&self) -> (Point2D, Point2D) {
         (
-            Point2D(min((self.0).0, (self.1).0), min((self.0).1, (self.1).1)),
-            Point2D(max((self.0).0, (self.1).0), max((self.0).1, (self.1).1)),
+            point!(min((self.start).x, (self.end).x), min((self.start).y, (self.end).y)),
+            point!(max((self.start).x, (self.end).x), max((self.start).y, (self.end).y)),
         )
     }
 }
 
 #[derive(Debug,Eq,PartialEq)]
 struct Wire {
-    vectors: Vec<Vec2D>,
+    vectors: Vec<Vector2D>,
     points: Vec<Point2D>,
     lines: Vec<Line2D>,
 }
@@ -75,22 +92,22 @@ impl FromStr for Wire {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let vectors: Vec<Vec2D> = s
+        let vectors: Vec<Vector2D> = s
             .split(",")
             .map(|x| x.split_at(1))
             .map(|(d, v)| match (d, v.parse::<i32>().unwrap()) {
-                ("L", v) => Vec2D(-v, 0),
-                ("R", v) => Vec2D(v, 0),
-                ("U", v) => Vec2D(0, v),
-                ("D", v) => Vec2D(0, -v),
+                ("L", v) => vector!(-v, 0),
+                ("R", v) => vector!(v, 0),
+                ("U", v) => vector!(0, v),
+                ("D", v) => vector!(0, -v),
                 _ => panic!("unrecognised direction"),
             })
             .collect();
-        let mut points: Vec<Point2D> = vec![Point2D(0, 0)];
+        let mut points: Vec<Point2D> = vec![point!(0, 0)];
         points.extend(
             vectors
             .iter()
-            .scan(Point2D(0, 0), |state, x| -> Option<Point2D> {
+            .scan(point!(0, 0), |state, x| -> Option<Point2D> {
                 *state = *state + *x;
                 Some(*state)
             })
@@ -98,7 +115,7 @@ impl FromStr for Wire {
         let lines: Vec<Line2D> = points.as_slice().windows(2)
             .map(|s| {
                 match s {
-                    [p1, p2] => Line2D(*p1, *p2),
+                    [p1, p2] => Line2D{start: *p1, end: *p2},
                     _ => panic!("literally impossible"),
                 }
             })
@@ -124,12 +141,12 @@ fn axis_aligned_line_intersection(l1: &Line2D, l2: &Line2D) -> Option<Point2D> {
     let (l1_min, l1_max) = l1.bounding_box();
     let (l2_min, l2_max) = l2.bounding_box();
     // Vertical line's X coordinate within horizontal line's range
-    let horizontal_overlap = (l1_min.0 ..= l1_max.0).contains(&l2_max.0);
+    let horizontal_overlap = (l1_min.x ..= l1_max.x).contains(&l2_max.x);
     // Horizontal line's Y coordinate within vertical line's range
-    let vertical_overlap = (l2_min.1 ..= l2_max.1).contains(&l1_min.1);
+    let vertical_overlap = (l2_min.y ..= l2_max.y).contains(&l1_min.y);
     if horizontal_overlap && vertical_overlap {
         // Intersection must be at X coordinate of vertical line and Y coordinate of horizontal line
-        return Some(Point2D(l2_min.0, l1_min.1));
+        return Some(point!(l2_min.x, l1_min.y));
     } else {
         return None;
     }
@@ -149,7 +166,7 @@ pub fn part1() -> i32 {
     let mut distances: Vec<i32> =
         intersections
         .iter()
-        .map(|&x| (x - Point2D(0, 0)).manhattan_length())
+        .map(|&x| (x - point!(0, 0)).manhattan_length())
         .filter(|&x| x > 0)
         .collect();
     distances.sort();
@@ -168,66 +185,66 @@ mod tests {
     fn test_wire_parser() {
         let wire = "R8,U5,L5,D3".parse::<Wire>().unwrap();
         assert_eq!(wire, Wire {
-            vectors: vec![Vec2D(8, 0), Vec2D(0, 5), Vec2D(-5, 0), Vec2D(0, -3)],
-            points: vec![Point2D(0, 0), Point2D(8, 0), Point2D(8, 5), Point2D(3, 5), Point2D(3, 2)],
+            vectors: vec![vector!(8, 0), vector!(0, 5), vector!(-5, 0), vector!(0, -3)],
+            points: vec![point!(0, 0), point!(8, 0), point!(8, 5), point!(3, 5), point!(3, 2)],
             lines: vec![
-                Line2D(Point2D(0, 0), Point2D(8, 0)),
-                Line2D(Point2D(8, 0), Point2D(8, 5)),
-                Line2D(Point2D(8, 5), Point2D(3, 5)),
-                Line2D(Point2D(3, 5), Point2D(3, 2)),
+                Line2D{start: point!(0, 0), end: point!(8, 0)},
+                Line2D{start: point!(8, 0), end: point!(8, 5)},
+                Line2D{start: point!(8, 5), end: point!(3, 5)},
+                Line2D{start: point!(3, 5), end: point!(3, 2)},
             ],
         });
     }
 
     #[test]
     fn test_axis() {
-        assert_eq!(Some(Axis::Horizontal), Line2D(Point2D(0, 5), Point2D(5, 5)).axis());
-        assert_eq!(Some(Axis::Vertical), Line2D(Point2D(5, 0), Point2D(5, 5)).axis());
-        assert_eq!(None, Line2D(Point2D(5, 5), Point2D(5, 5)).axis());
-        assert_eq!(None, Line2D(Point2D(0, 0), Point2D(5, 5)).axis());
+        assert_eq!(Some(Axis::Horizontal), Line2D{start: point!(0, 5), end: point!(5, 5)}.axis());
+        assert_eq!(Some(Axis::Vertical), Line2D{start: point!(5, 0), end: point!(5, 5)}.axis());
+        assert_eq!(None, Line2D{start: point!(5, 5), end: point!(5, 5)}.axis());
+        assert_eq!(None, Line2D{start: point!(0, 0), end: point!(5, 5)}.axis());
     }
 
     #[test]
     fn test_line_intersection() {
         // Nice simple horizontal + vertical lines that have the same end
-        assert_eq!(Some(Point2D(5, 5)), axis_aligned_line_intersection(
-            &Line2D(Point2D(0, 5), Point2D(5, 5)),
-            &Line2D(Point2D(5, 0), Point2D(5, 5)),
+        assert_eq!(Some(point!(5, 5)), axis_aligned_line_intersection(
+            &Line2D{start: point!(0, 5), end: point!(5, 5)},
+            &Line2D{start: point!(5, 0), end: point!(5, 5)},
         ));
         // Arguments reversed
-        assert_eq!(Some(Point2D(5, 5)), axis_aligned_line_intersection(
-            &Line2D(Point2D(5, 0), Point2D(5, 5)),
-            &Line2D(Point2D(0, 5), Point2D(5, 5)),
+        assert_eq!(Some(point!(5, 5)), axis_aligned_line_intersection(
+            &Line2D{start: point!(5, 0), end: point!(5, 5)},
+            &Line2D{start: point!(0, 5), end: point!(5, 5)},
         ));
         // Line "directions" reversed
-        assert_eq!(Some(Point2D(5, 5)), axis_aligned_line_intersection(
-            &Line2D(Point2D(5, 5), Point2D(5, 0)),
-            &Line2D(Point2D(5, 5), Point2D(0, 5)),
+        assert_eq!(Some(point!(5, 5)), axis_aligned_line_intersection(
+            &Line2D{start: point!(5, 5), end: point!(5, 0)},
+            &Line2D{start: point!(5, 5), end: point!(0, 5)},
         ));
         // Lines with same start
-        assert_eq!(Some(Point2D(0, 0)), axis_aligned_line_intersection(
-            &Line2D(Point2D(0, 0), Point2D(5, 0)),
-            &Line2D(Point2D(0, 0), Point2D(0, 5)),
+        assert_eq!(Some(point!(0, 0)), axis_aligned_line_intersection(
+            &Line2D{start: point!(0, 0), end: point!(5, 0)},
+            &Line2D{start: point!(0, 0), end: point!(0, 5)},
         ));
         // First line ends on second line
-        assert_eq!(Some(Point2D(5, 5)), axis_aligned_line_intersection(
-            &Line2D(Point2D(0, 5), Point2D(5, 5)),
-            &Line2D(Point2D(5, 0), Point2D(5, 10)),
+        assert_eq!(Some(point!(5, 5)), axis_aligned_line_intersection(
+            &Line2D{start: point!(0, 5), end: point!(5, 5)},
+            &Line2D{start: point!(5, 0), end: point!(5, 10)},
         ));
         // Second line ends on first line
-        assert_eq!(Some(Point2D(5, 5)), axis_aligned_line_intersection(
-            &Line2D(Point2D(5, 0), Point2D(5, 10)),
-            &Line2D(Point2D(0, 5), Point2D(5, 5)),
+        assert_eq!(Some(point!(5, 5)), axis_aligned_line_intersection(
+            &Line2D{start: point!(5, 0), end: point!(5, 10)},
+            &Line2D{start: point!(0, 5), end: point!(5, 5)},
         ));
         // Lines intersect somewhere that's not a line end
-        assert_eq!(Some(Point2D(5, 3)), axis_aligned_line_intersection(
-            &Line2D(Point2D(5, 0), Point2D(5, 10)),
-            &Line2D(Point2D(3, 3), Point2D(20, 3)),
+        assert_eq!(Some(point!(5, 3)), axis_aligned_line_intersection(
+            &Line2D{start: point!(5, 0), end: point!(5, 10)},
+            &Line2D{start: point!(3, 3), end: point!(20, 3)},
         ));
         // Lines don't intersect at all
         assert_eq!(None, axis_aligned_line_intersection(
-            &Line2D(Point2D(5, 0), Point2D(5, 10)),
-            &Line2D(Point2D(0, 5), Point2D(3, 5)),
+            &Line2D{start: point!(5, 0), end: point!(5, 10)},
+            &Line2D{start: point!(0, 5), end: point!(3, 5)},
         ));
     }
 
@@ -236,7 +253,7 @@ mod tests {
         let wire1 = "R8,U5,L5,D3".parse::<Wire>().unwrap();
         let wire2 = "U7,R6,D4,L4".parse::<Wire>().unwrap();
         let intersections = find_intersections(&wire1.lines, &wire2.lines, axis_aligned_line_intersection);
-        let expected = [Point2D(0, 0), Point2D(3, 3), Point2D(6, 5)].iter().cloned().collect();
+        let expected = [point!(0, 0), point!(3, 3), point!(6, 5)].iter().cloned().collect();
         assert_eq!(intersections, expected);
     }
 
