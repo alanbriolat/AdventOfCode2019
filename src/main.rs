@@ -6,6 +6,7 @@ mod util;
 mod day01;
 mod day02;
 mod day03;
+mod day04;
 
 macro_rules! run {
     ($l:expr) => {
@@ -23,4 +24,6 @@ fn main() {
     run!(day02::part2());
     run!(day03::part1());
     run!(day03::part2());
+    run!(day04::part1());
+    run!(day04::part2());
 }
