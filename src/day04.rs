@@ -30,7 +30,7 @@ fn get_positive_range(s: &str) -> RangeInclusive<u32> {
 }
 
 fn to_digits(i: u32) -> Vec<u8> {
-    format!("{}", i).chars().map(|c| c.to_string().parse::<u8>().unwrap()).collect()
+    i.to_string().bytes().collect()
 }
 
 fn never_decreasing(digits: &[u8]) -> bool {
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_to_digits() {
-        assert_eq!(to_digits(1234), vec![1, 2, 3, 4]);
+        assert_eq!(to_digits(1234), vec![b'1', b'2', b'3', b'4']);
     }
 
     #[test]
