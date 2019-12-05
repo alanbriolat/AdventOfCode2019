@@ -15,7 +15,15 @@ pub fn part1() -> intcode::Word {
 }
 
 pub fn part2() -> i32 {
-    0
+    let programs: Vec<intcode::Program> = util::read_data("day05_input.txt");
+    let mut emulator = intcode::Emulator::new(&programs[0]);
+    emulator.write(5);
+    emulator.run();
+    repeat_with(|| emulator.read())
+        .take_while(|x| x.is_some())
+        .last()
+        .unwrap()
+        .unwrap()
 }
 
 #[cfg(test)]
@@ -29,6 +37,6 @@ mod tests {
 
     #[test]
     fn test_part2() {
-        unimplemented!();
+        assert_eq!(part2(), 9006327);
     }
 }

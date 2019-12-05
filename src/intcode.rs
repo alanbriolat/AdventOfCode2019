@@ -20,23 +20,16 @@ enum Param {
     Position(usize),
 }
 
-impl Param {
-    pub fn new(word: Word, mode: u8) -> Param {
-        use Param::*;
-        match mode {
-            0 => Position(word as usize),
-            1 => Immediate(word),
-            _ => panic!("unknown parameter mode"),
-        }
-    }
-}
-
 #[derive(Debug,Eq,PartialEq)]
 enum Op {
     Add(Param, Param, Param),
     Mul(Param, Param, Param),
     Read(Param),
     Write(Param),
+    JumpIfTrue(Param, Param),
+    JumpIfFalse(Param, Param),
+    LessThan(Param, Param, Param),
+    Equal(Param, Param, Param),
     Halt,
 }
 
@@ -48,6 +41,10 @@ impl Op {
             Mul(_, _, _) => 4,
             Read(_) => 2,
             Write(_) => 2,
+            JumpIfTrue(_, _) => 3,
+            JumpIfFalse(_, _) => 3,
+            LessThan(_, _, _) => 4,
+            Equal(_, _, _) => 4,
             Halt => 1,
         }
     }
@@ -102,37 +99,49 @@ impl Emulator {
     }
 
     fn fetch(&self, pos: usize) -> Op {
+        macro_rules! p {
+            (0, $offset:literal) => ( Position(self.memory[pos + $offset] as usize) );
+            (1, $offset:literal) => ( Immediate(self.memory[pos + $offset]) );
+        }
+
+        macro_rules! op {
+            ($t:path, $a:tt, $b:tt, $c:tt) => ( $t(p!($a, 1), p!($b, 2), p!($c, 3)) );
+            ($t:path, $a:tt, $b:tt) => ( $t(p!($a, 1), p!($b, 2)) );
+            ($t:path, $a:tt) => ( $t(p!($a, 1)) );
+            ($t:path) => ( $t );
+        }
+
         use Param::*;
         use Op::*;
         match self.memory[pos] {
-            1 => Add(Position(self.memory[pos + 1] as usize),
-                     Position(self.memory[pos + 2] as usize),
-                     Position(self.memory[pos + 3] as usize)),
-            101 => Add(Immediate(self.memory[pos + 1]),
-                       Position(self.memory[pos + 2] as usize),
-                       Position(self.memory[pos + 3] as usize)),
-            1001 => Add(Position(self.memory[pos + 1] as usize),
-                        Immediate(self.memory[pos + 2]),
-                        Position(self.memory[pos + 3] as usize)),
-            1101 => Add(Immediate(self.memory[pos + 1]),
-                        Immediate(self.memory[pos + 2]),
-                        Position(self.memory[pos + 3] as usize)),
-            2 => Mul(Position(self.memory[pos + 1] as usize),
-                     Position(self.memory[pos + 2] as usize),
-                     Position(self.memory[pos + 3] as usize)),
-            102 => Mul(Immediate(self.memory[pos + 1]),
-                       Position(self.memory[pos + 2] as usize),
-                       Position(self.memory[pos + 3] as usize)),
-            1002 => Mul(Position(self.memory[pos + 1] as usize),
-                        Immediate(self.memory[pos + 2]),
-                        Position(self.memory[pos + 3] as usize)),
-            1102 => Mul(Immediate(self.memory[pos + 1]),
-                        Immediate(self.memory[pos + 2]),
-                        Position(self.memory[pos + 3] as usize)),
-            3 => Read(Position(self.memory[pos + 1] as usize)),
-            4 => Write(Position(self.memory[pos + 1] as usize)),
-            104 => Write(Immediate(self.memory[pos + 1])),
-            99 => Halt,
+            00001 => op!(Add, 0, 0, 0),
+            00101 => op!(Add, 1, 0, 0),
+            01001 => op!(Add, 0, 1, 0),
+            01101 => op!(Add, 1, 1, 0),
+            00002 => op!(Mul, 0, 0, 0),
+            00102 => op!(Mul, 1, 0, 0),
+            01002 => op!(Mul, 0, 1, 0),
+            01102 => op!(Mul, 1, 1, 0),
+            00003 => op!(Read, 0),
+            00004 => op!(Write, 0),
+            00104 => op!(Write, 1),
+            00005 => op!(JumpIfTrue, 0, 0),
+            00105 => op!(JumpIfTrue, 1, 0),
+            01005 => op!(JumpIfTrue, 0, 1),
+            01105 => op!(JumpIfTrue, 1, 1),
+            00006 => op!(JumpIfFalse, 0, 0),
+            00106 => op!(JumpIfFalse, 1, 0),
+            01006 => op!(JumpIfFalse, 0, 1),
+            01106 => op!(JumpIfFalse, 1, 1),
+            00007 => op!(LessThan, 0, 0, 0),
+            00107 => op!(LessThan, 1, 0, 0),
+            01007 => op!(LessThan, 0, 1, 0),
+            01107 => op!(LessThan, 1, 1, 0),
+            00008 => op!(Equal, 0, 0, 0),
+            00108 => op!(Equal, 1, 0, 0),
+            01008 => op!(Equal, 0, 1, 0),
+            01108 => op!(Equal, 1, 1, 0),
+            00099 => op!(Halt),
             _ => panic!("unknown opcode"),
         }
     }
@@ -162,6 +171,24 @@ impl Emulator {
             },
             Write(a) => {
                 self.output.push(self.value(a));
+            },
+            JumpIfTrue(test, dest) => {
+                if self.value(test) != 0 {
+                    self.ip = self.value(dest) as usize;
+                    return true;    // Don't increment instruction pointer
+                }
+            },
+            JumpIfFalse(test, dest) => {
+                if self.value(test) == 0 {
+                    self.ip = self.value(dest) as usize;
+                    return true;    // Don't increment instruction pointer
+                }
+            },
+            LessThan(a, b, Position(c)) => {
+                self.memory[*c] = if self.value(a) < self.value(b) { 1 } else { 0 };
+            },
+            Equal(a, b, Position(c)) => {
+                self.memory[*c] = if self.value(a) == self.value(b) { 1 } else { 0 };
             },
             Halt => return false,   // Don't increment instruction pointer
             _ => panic!("unknown op"),
