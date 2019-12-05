@@ -3,6 +3,7 @@ use std::time::Instant;
 #[macro_use] extern crate itertools;
 
 mod util;
+mod intcode;
 mod day01;
 mod day02;
 mod day03;
