@@ -3,10 +3,6 @@ use std::num::ParseIntError;
 
 pub type Word = i32;
 
-fn to_digits(word: &Word, n: u32) -> Vec<u8> {
-    (0 .. n).rev().map(|i| ((word / (10 as Word).pow(i)) % 10) as u8).collect()
-}
-
 pub struct Program(Vec<Word>);
 
 impl FromStr for Program {
@@ -106,21 +102,37 @@ impl Emulator {
     }
 
     fn fetch(&self, pos: usize) -> Op {
+        use Param::*;
         use Op::*;
-        match to_digits(&self.memory[pos], 5).as_slice() {
-            [_, m2, m1, 0, 1] =>
-                Add(Param::new(self.memory[pos + 1], *m1),
-                    Param::new(self.memory[pos + 2], *m2),
-                    Param::new(self.memory[pos + 3], 0)),
-            [_, m2, m1, 0, 2] =>
-                Mul(Param::new(self.memory[pos + 1], *m1),
-                    Param::new(self.memory[pos + 2], *m2),
-                    Param::new(self.memory[pos + 3], 0)),
-            [_, _, _, 0, 3] =>
-                Read(Param::new(self.memory[pos + 1], 0)),
-            [_, _, m1, 0, 4] =>
-                Write(Param::new(self.memory[pos + 1], *m1)),
-            [_, _, _, 9, 9] => Halt,
+        match self.memory[pos] {
+            1 => Add(Position(self.memory[pos + 1] as usize),
+                     Position(self.memory[pos + 2] as usize),
+                     Position(self.memory[pos + 3] as usize)),
+            101 => Add(Immediate(self.memory[pos + 1]),
+                       Position(self.memory[pos + 2] as usize),
+                       Position(self.memory[pos + 3] as usize)),
+            1001 => Add(Position(self.memory[pos + 1] as usize),
+                        Immediate(self.memory[pos + 2]),
+                        Position(self.memory[pos + 3] as usize)),
+            1101 => Add(Immediate(self.memory[pos + 1]),
+                        Immediate(self.memory[pos + 2]),
+                        Position(self.memory[pos + 3] as usize)),
+            2 => Mul(Position(self.memory[pos + 1] as usize),
+                     Position(self.memory[pos + 2] as usize),
+                     Position(self.memory[pos + 3] as usize)),
+            102 => Mul(Immediate(self.memory[pos + 1]),
+                       Position(self.memory[pos + 2] as usize),
+                       Position(self.memory[pos + 3] as usize)),
+            1002 => Mul(Position(self.memory[pos + 1] as usize),
+                        Immediate(self.memory[pos + 2]),
+                        Position(self.memory[pos + 3] as usize)),
+            1102 => Mul(Immediate(self.memory[pos + 1]),
+                        Immediate(self.memory[pos + 2]),
+                        Position(self.memory[pos + 3] as usize)),
+            3 => Read(Position(self.memory[pos + 1] as usize)),
+            4 => Write(Position(self.memory[pos + 1] as usize)),
+            104 => Write(Immediate(self.memory[pos + 1])),
+            99 => Halt,
             _ => panic!("unknown opcode"),
         }
     }
@@ -171,19 +183,6 @@ mod tests {
         ($a:expr, $b:pat) => {
             match $a { $b => true, _ => false }
         }
-    }
-
-    #[test]
-    fn test_to_digits() {
-        assert_eq!(to_digits(&1, 1), vec![1]);
-        assert_eq!(to_digits(&12, 2), vec![1, 2]);
-        assert_eq!(to_digits(&123, 3), vec![1, 2, 3]);
-        assert_eq!(to_digits(&1234, 4), vec![1, 2, 3, 4]);
-        assert_eq!(to_digits(&12345, 5), vec![1, 2, 3, 4, 5]);
-        assert_eq!(to_digits(&123456, 6), vec![1, 2, 3, 4, 5, 6]);
-
-        assert_eq!(to_digits(&1234, 2), vec![3, 4]);
-        assert_eq!(to_digits(&1234, 7), vec![0, 0, 0, 1, 2, 3, 4]);
     }
 
     #[test]

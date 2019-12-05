@@ -1,5 +1,5 @@
-use crate::util;
 use crate::intcode;
+use crate::util;
 
 pub fn part1() -> intcode::Word {
     let programs: Vec<intcode::Program> = util::read_data("day02_input.txt");
