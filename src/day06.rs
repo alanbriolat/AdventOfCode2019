@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::iter::FromIterator;
 use std::str::FromStr;
 
 use crate::util;
@@ -24,54 +23,81 @@ impl FromStr for Orbit {
 
 #[derive(Debug)]
 struct OrbitMap {
-    orbit_data: HashMap<String, HashSet<String>>,
+    adjacent: HashMap<String, HashSet<String>>,
 }
 
 impl OrbitMap {
     fn new(orbits: &Vec<Orbit>) -> OrbitMap {
-        let mut map = OrbitMap { orbit_data: HashMap::new() };
+        let mut map = OrbitMap { adjacent: HashMap::new() };
         for orbit in orbits {
-            if !map.orbit_data.contains_key(orbit.parent.as_str()) {
-                map.orbit_data.insert(orbit.parent.clone(), HashSet::new());
-            }
-            map.orbit_data.get_mut(orbit.parent.as_str()).unwrap().insert(orbit.body.clone());
+            map.add_adjacent(orbit.parent.as_str(), orbit.body.as_str());
         }
         map
+    }
+
+    fn add_adjacent(&mut self, a: &str, b: &str) {
+        self.get_adjacent_mut(a).insert(b.to_string());
+        self.get_adjacent_mut(b).insert(a.to_string());
+    }
+
+    fn get_adjacent_mut(&mut self, k: &str) -> &mut HashSet<String> {
+        if !self.adjacent.contains_key(k) {
+            self.adjacent.insert(k.to_string(), HashSet::new());
+        }
+        self.adjacent.get_mut(k).unwrap()
+    }
+
+    fn get_adjacent(&self, k: &str) -> Option<&HashSet<String>> {
+        self.adjacent.get(k)
+    }
+
+    fn get_distances_from(&self, k: &str) -> HashMap<String, usize> {
+        let mut distances: HashMap<String, usize> = HashMap::new();
+        let mut queue: VecDeque<(&HashSet<String>, usize)> = VecDeque::new();
+        let start: HashSet<String> = vec![k.to_string()].into_iter().collect();
+        queue.push_back((&start, 0));
+        loop {
+            match queue.pop_front() {
+                Some((bodies, depth)) => {
+                    for body in bodies {
+                        if !distances.contains_key(body.as_str()) {
+                            distances.insert(body.clone(), depth);
+                            match self.get_adjacent(body.as_str()) {
+                                Some(next) => {
+                                    queue.push_back((next, depth + 1));
+                                },
+                                None => (),
+                            }
+                        }
+                    }
+                },
+                None => break,
+            }
+        }
+        distances
     }
 }
 
 fn count_orbits(filename: &str) -> usize {
     let orbits: Vec<Orbit> = util::read_data(filename);
     let map =  OrbitMap::new(&orbits);
-    let start: HashSet<String> = vec!["COM".to_string()].into_iter().collect();
-    let mut queue: VecDeque<(usize, &HashSet<String>)> = VecDeque::new();
-    queue.push_back((0, &start));
-    let mut sum: usize = 0;
-    loop {
-        match queue.pop_front() {
-            Some((depth, bodies)) => {
-                sum += depth * bodies.len();
-                for body in bodies {
-                    match map.orbit_data.get(body) {
-                        Some(next) => {
-                            queue.push_back((depth + 1, next));
-                        },
-                        None => (),
-                    }
-                }
-            },
-            None => break,
-        }
-    };
-    sum
+    let distances = map.get_distances_from("COM");
+    distances.values().sum()
+}
+
+fn get_orbital_transfers(filename: &str, a: &str, b: &str) -> usize {
+    let orbits: Vec<Orbit> = util::read_data(filename);
+    let map =  OrbitMap::new(&orbits);
+    let distances = map.get_distances_from(a);
+    *distances.get(b).unwrap() - 2
 }
 
 pub fn part1() -> usize {
     count_orbits("day06_input.txt")
 }
 
-pub fn part2() -> i32 {
-    0
+pub fn part2() -> usize {
+    get_orbital_transfers("day06_input.txt", "YOU", "SAN")
 }
 
 #[cfg(test)]
@@ -84,12 +110,19 @@ mod tests {
     }
 
     #[test]
+    fn test_get_orbital_transfers() {
+        assert_eq!(get_orbital_transfers("day06_example2.txt", "YOU", "SAN"), 4);
+        assert_eq!(get_orbital_transfers("day06_input.txt", "YOU", "SAN"),
+                   get_orbital_transfers("day06_input.txt", "SAN", "YOU"));
+    }
+
+    #[test]
     fn test_part1() {
         assert_eq!(part1(), 119831);
     }
 
     #[test]
     fn test_part2() {
-        assert_eq!(part2(), unimplemented!());
+        assert_eq!(part2(), 322);
     }
 }
