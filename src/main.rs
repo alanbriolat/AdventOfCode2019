@@ -9,6 +9,7 @@ mod day02;
 mod day03;
 mod day04;
 mod day05;
+mod day06;
 
 macro_rules! run {
     ($l:expr) => {
@@ -30,4 +31,6 @@ fn main() {
     run!(day04::part2());
     run!(day05::part1());
     run!(day05::part2());
+    run!(day06::part1());
+    run!(day06::part2());
 }
