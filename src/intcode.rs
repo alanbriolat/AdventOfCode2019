@@ -1,5 +1,6 @@
 use std::str::FromStr;
 use std::num::ParseIntError;
+use std::collections::VecDeque;
 
 pub type Word = i32;
 
@@ -53,22 +54,18 @@ impl Op {
 #[derive(Clone,Debug)]
 pub struct Emulator {
     memory: Vec<Word>,
-    input: Vec<Word>,
-    input_pointer: usize,
-    output: Vec<Word>,
-    output_pointer: usize,
     ip: usize,
+    input_buffer: VecDeque<Word>,
+    output_buffer: VecDeque<Word>,
 }
 
 impl Emulator {
     pub fn new(program: &Program) -> Emulator {
         Emulator {
             memory: program.0.clone(),
-            input: Vec::new(),
-            input_pointer: 0,
-            output: Vec::new(),
-            output_pointer: 0,
             ip: 0,
+            input_buffer: VecDeque::new(),
+            output_buffer: VecDeque::new(),
         }
     }
 
@@ -84,25 +81,17 @@ impl Emulator {
 
     /// Write input value to emulator
     pub fn write(&mut self, v: Word) {
-        self.input.push(v);
+        self.input_buffer.push_back(v);
     }
 
     /// Read output value from emulator
     pub fn read(&mut self) -> Option<Word> {
-        if self.output_pointer >= self.output.len() {
-            None
-        } else {
-            let out = self.output[self.output_pointer];
-            self.output_pointer += 1;
-            Some(out)
-        }
+        self.output_buffer.pop_front()
     }
 
     /// Read all unread output from emulator
-    pub fn read_all(&mut self) -> &[Word] {
-        let out = &self.output[self.output_pointer .. self.output.len()];
-        self.output_pointer = self.output.len();
-        return out;
+    pub fn read_all(&mut self) -> Vec<Word> {
+        self.output_buffer.drain(..).collect()
     }
 
     fn fetch(&self, pos: usize) -> Op {
@@ -173,11 +162,10 @@ impl Emulator {
                 self.memory[*c] = self.value(a) * self.value(b);
             },
             Read(Position(a)) => {
-                self.memory[*a] = self.input[self.input_pointer];
-                self.input_pointer += 1;
+                self.memory[*a] = self.input_buffer.pop_front().unwrap();
             },
             Write(a) => {
-                self.output.push(self.value(a));
+                self.output_buffer.push_back(self.value(a));
             },
             JumpIfTrue(test, dest) => {
                 if self.value(test) != 0 {
