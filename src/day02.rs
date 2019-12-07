@@ -1,9 +1,7 @@
 use crate::intcode;
-use crate::util;
 
 pub fn part1() -> intcode::Word {
-    let programs: Vec<intcode::Program> = util::read_data("day02_input.txt");
-    let mut emulator = intcode::Emulator::new(&programs[0]);
+    let mut emulator = intcode::Emulator::from_data_file("day02_input.txt");
     emulator.set(1, 12);
     emulator.set(2, 2);
     emulator.run();
@@ -11,8 +9,7 @@ pub fn part1() -> intcode::Word {
 }
 
 pub fn part2() -> intcode::Word {
-    let programs: Vec<intcode::Program> = util::read_data("day02_input.txt");
-    let base = intcode::Emulator::new(&programs[0]);
+    let base = intcode::Emulator::from_data_file("day02_input.txt");
     let target = 19690720 as intcode::Word;
 
     'outer: for x in 0..=99 {

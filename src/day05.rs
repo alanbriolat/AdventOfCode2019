@@ -1,17 +1,14 @@
 use crate::intcode;
-use crate::util;
 
 pub fn part1() -> intcode::Word {
-    let programs: Vec<intcode::Program> = util::read_data("day05_input.txt");
-    let mut emulator = intcode::Emulator::new(&programs[0]);
+    let mut emulator = intcode::Emulator::from_data_file("day05_input.txt");
     emulator.write(1);
     emulator.run();
     *emulator.read_all().last().unwrap()
 }
 
 pub fn part2() -> i32 {
-    let programs: Vec<intcode::Program> = util::read_data("day05_input.txt");
-    let mut emulator = intcode::Emulator::new(&programs[0]);
+    let mut emulator = intcode::Emulator::from_data_file("day05_input.txt");
     emulator.write(5);
     emulator.run();
     *emulator.read_all().last().unwrap()

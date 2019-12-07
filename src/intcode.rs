@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::num::ParseIntError;
 use std::collections::VecDeque;
+use crate::util;
 
 pub type Word = i32;
 
@@ -74,6 +75,11 @@ impl Emulator {
             input_buffer: VecDeque::new(),
             output_buffer: VecDeque::new(),
         }
+    }
+
+    pub fn from_data_file(filename: &str) -> Emulator {
+        let programs: Vec<Program> = util::read_data(filename);
+        Emulator::new(&programs[0])
     }
 
     pub fn set(&mut self, pos: usize, v: Word) -> Word {

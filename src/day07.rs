@@ -1,7 +1,6 @@
 use std::cmp::max;
 use permutohedron::Heap;
-use crate::intcode::{Program, Word, Emulator};
-use crate::util;
+use crate::intcode::{Word, Emulator};
 
 fn run_amps(base: &Emulator) -> Word {
     let mut phases: Vec<Word> = (0 .. 5).collect();
@@ -22,9 +21,7 @@ fn run_amps(base: &Emulator) -> Word {
 }
 
 pub fn part1() -> i32 {
-    let programs: Vec<Program> = util::read_data("day07_input.txt");
-    let base = Emulator::new(&programs[0]);
-    run_amps(&base)
+    run_amps(&Emulator::from_data_file("day07_input.txt"))
 }
 
 pub fn part2() -> i32 {
@@ -37,24 +34,21 @@ mod tests {
 
     #[test]
     fn test_run_amps_1() {
-        let program = "3,15,3,16,1002,16,10,16,1,16,15,15,4,15,99,0,0".parse::<Program>().unwrap();
-        let base = Emulator::new(&program);
+        let base = Emulator::from_data_file("day07_example1.txt");
         let result = run_amps(&base);
         assert_eq!(result, 43210);
     }
 
     #[test]
     fn test_run_amps_2() {
-        let program = "3,23,3,24,1002,24,10,24,1002,23,-1,23,101,5,23,23,1,24,23,23,4,23,99,0,0".parse::<Program>().unwrap();
-        let base = Emulator::new(&program);
+        let base = Emulator::from_data_file("day07_example2.txt");
         let result = run_amps(&base);
         assert_eq!(result, 54321);
     }
 
     #[test]
     fn test_run_amps_3() {
-        let program = "3,31,3,32,1002,32,10,32,1001,31,-2,31,1007,31,0,33,1002,33,7,33,1,33,31,31,1,32,31,31,4,31,99,0,0,0".parse::<Program>().unwrap();
-        let base = Emulator::new(&program);
+        let base = Emulator::from_data_file("day07_example3.txt");
         let result = run_amps(&base);
         assert_eq!(result, 65210);
     }
