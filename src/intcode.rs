@@ -98,6 +98,13 @@ impl Emulator {
         }
     }
 
+    /// Read all unread output from emulator
+    pub fn read_all(&mut self) -> &[Word] {
+        let out = &self.output[self.output_pointer .. self.output.len()];
+        self.output_pointer = self.output.len();
+        return out;
+    }
+
     fn fetch(&self, pos: usize) -> Op {
         macro_rules! p {
             (0, $offset:literal) => ( Position(self.memory[pos + $offset] as usize) );
