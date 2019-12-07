@@ -51,6 +51,13 @@ impl Op {
     }
 }
 
+#[derive(Copy,Clone,Debug,Eq,PartialEq)]
+pub enum State {
+    Continue,
+    Halt,
+    ReadWait,
+}
+
 #[derive(Clone,Debug)]
 pub struct Emulator {
     memory: Vec<Word>,
@@ -150,7 +157,7 @@ impl Emulator {
         }
     }
 
-    pub fn step(&mut self) -> bool {
+    pub fn step(&mut self) -> State {
         use Op::*;
         use Param::*;
         let op = self.fetch(self.ip);
@@ -162,7 +169,15 @@ impl Emulator {
                 self.memory[*c] = self.value(a) * self.value(b);
             },
             Read(Position(a)) => {
-                self.memory[*a] = self.input_buffer.pop_front().unwrap();
+                match self.input_buffer.pop_front() {
+                    Some(v) => {
+                        self.memory[*a] = v;
+                    },
+                    None => {
+                        // Don't increment instruction pointer, will re-try on next step()/run()
+                        return State::ReadWait
+                    },
+                }
             },
             Write(a) => {
                 self.output_buffer.push_back(self.value(a));
@@ -170,13 +185,13 @@ impl Emulator {
             JumpIfTrue(test, dest) => {
                 if self.value(test) != 0 {
                     self.ip = self.value(dest) as usize;
-                    return true;    // Don't increment instruction pointer
+                    return State::Continue;     // Don't increment instruction pointer after jump
                 }
             },
             JumpIfFalse(test, dest) => {
                 if self.value(test) == 0 {
                     self.ip = self.value(dest) as usize;
-                    return true;    // Don't increment instruction pointer
+                    return State::Continue;     // Don't increment instruction pointer after jump
                 }
             },
             LessThan(a, b, Position(c)) => {
@@ -185,15 +200,23 @@ impl Emulator {
             Equal(a, b, Position(c)) => {
                 self.memory[*c] = if self.value(a) == self.value(b) { 1 } else { 0 };
             },
-            Halt => return false,   // Don't increment instruction pointer
+            Halt => {
+                // Don't increment instruction pointer, will remain in halted state
+                return State::Halt
+            },
             _ => panic!("unknown op"),
         };
         self.ip += op.size();
-        return true;
+        return State::Continue;
     }
 
-    pub fn run(&mut self) {
-        while self.step() {};
+    pub fn run(&mut self) -> State {
+        loop {
+            match self.step() {
+                State::Continue => (),
+                state => return state,
+            }
+        }
     }
 }
 
@@ -233,9 +256,9 @@ mod tests {
     #[test]
     fn test_program_day02_1() {
         let mut e = Emulator::new(&"1,9,10,3,2,3,11,0,99,30,40,50".parse::<Program>().unwrap());
-        assert!(e.step());
+        assert_eq!(e.step(), State::Continue);
         assert_eq!(e.memory, vec![1, 9, 10, 70, 2, 3, 11, 0, 99, 30, 40, 50]);
-        assert!(e.step());
+        assert_eq!(e.step(), State::Continue);
         assert_eq!(e.memory, vec![3500, 9, 10, 70, 2, 3, 11, 0, 99, 30, 40, 50]);
     }
 
