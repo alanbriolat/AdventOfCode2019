@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::util;
 
 const WIDTH: usize = 25;
@@ -10,13 +9,8 @@ const BLACK: u8 = b'0';
 const WHITE: u8 = b'1';
 const TRANSPARENT: u8 = b'2';
 
-fn count_bytes(layer: &[u8]) -> HashMap<u8, usize> {
-    let mut out = HashMap::new();
-    for c in layer {
-        let counter = out.entry(*c).or_insert(0);
-        *counter += 1;
-    }
-    return out;
+fn count_byte(layer: &[u8], byte: u8) -> usize {
+    layer.iter().filter(|&x| *x == byte).count()
 }
 
 fn merge_layers(current: &mut [u8], next: &[u8]) {
@@ -27,16 +21,27 @@ fn merge_layers(current: &mut [u8], next: &[u8]) {
     }
 }
 
+fn get_checksum(data: &[u8]) -> usize {
+    let mut best_zeroes: usize = std::usize::MAX;
+    let mut best_checksum: usize = 0;
+    for chunk in data.chunks(SIZE) {
+        let count_zeroes = count_byte(chunk, b'0');
+        if count_zeroes < best_zeroes {
+            best_zeroes = count_zeroes;
+            best_checksum = count_byte(chunk, b'1') * count_byte(chunk, b'2');
+        }
+    }
+    best_checksum
+}
+
 pub fn part1() -> usize {
-    let data = util::read_lines("day08_input.txt").into_iter().nth(0).unwrap();
-    let counters: Vec<HashMap<u8, usize>> = data.as_bytes().chunks(SIZE).map(|chunk| count_bytes(chunk)).collect();
-    let most_zeroes = counters.iter().min_by_key(|x| x.get(&b'0').or(Some(&0)).unwrap()).unwrap();
-    most_zeroes.get(&b'1').unwrap() * most_zeroes.get(&b'2').unwrap()
+    let data = util::read_lines("day08_input.txt").into_iter().nth(0).unwrap().into_bytes();
+    get_checksum(data.as_slice())
 }
 
 pub fn part2() -> String {
-    let data = util::read_lines("day08_input.txt").into_iter().nth(0).unwrap();
-    let layers: Vec<&[u8]> = data.as_bytes().chunks(SIZE).collect();
+    let data = util::read_lines("day08_input.txt").into_iter().nth(0).unwrap().into_bytes();
+    let layers: Vec<&[u8]> = data.chunks(SIZE).collect();
     let mut current: [u8; SIZE] = [TRANSPARENT; SIZE];
     for layer in layers {
         merge_layers(&mut current, layer);
