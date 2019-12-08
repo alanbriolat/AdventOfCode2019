@@ -10,6 +10,11 @@ fn open_data(filename: &str) -> io::BufReader<File>{
     io::BufReader::new(file)
 }
 
+pub fn read_lines(filename: &str) -> Vec<String> {
+    let reader = open_data(filename);
+    reader.lines().map(|x| x.unwrap()).collect()
+}
+
 pub fn read_data<T>(filename: &str) -> Vec<T>
     where T: FromStr, <T as FromStr>::Err: Debug {
     let reader = open_data(filename);
