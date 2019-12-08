@@ -4,7 +4,6 @@ const WIDTH: usize = 25;
 const HEIGHT: usize = 6;
 const SIZE: usize = WIDTH * HEIGHT;
 
-#[allow(dead_code)]
 const BLACK: u8 = b'0';
 const WHITE: u8 = b'1';
 const TRANSPARENT: u8 = b'2';
@@ -25,10 +24,10 @@ fn get_checksum(data: &[u8]) -> usize {
     let mut best_zeroes: usize = std::usize::MAX;
     let mut best_checksum: usize = 0;
     for chunk in data.chunks(SIZE) {
-        let count_zeroes = count_byte(chunk, b'0');
+        let count_zeroes = count_byte(chunk, BLACK);
         if count_zeroes < best_zeroes {
             best_zeroes = count_zeroes;
-            best_checksum = count_byte(chunk, b'1') * count_byte(chunk, b'2');
+            best_checksum = count_byte(chunk, WHITE) * count_byte(chunk, TRANSPARENT);
         }
     }
     best_checksum

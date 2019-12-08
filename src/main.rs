@@ -1,17 +1,6 @@
 use std::time::Instant;
 
-#[macro_use] extern crate itertools;
-
-mod util;
-mod intcode;
-mod day01;
-mod day02;
-mod day03;
-mod day04;
-mod day05;
-mod day06;
-mod day07;
-mod day08;
+use advent_of_code_2019::*;
 
 macro_rules! run {
     ($l:expr) => {
