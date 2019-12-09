@@ -3,7 +3,7 @@ use std::num::ParseIntError;
 use std::collections::VecDeque;
 use crate::util;
 
-pub type Word = i32;
+pub type Word = i64;
 
 pub struct Program(Vec<Word>);
 
@@ -16,10 +16,27 @@ impl FromStr for Program {
     }
 }
 
+const MODE_POSITION: Word = 0;
+const MODE_IMMEDIATE: Word = 1;
+const MODE_RELATIVE: Word = 2;
+
 #[derive(Debug,Eq,PartialEq)]
 enum Param {
     Position(Word),
     Immediate(Word),
+    Relative(Word),
+}
+
+impl Param {
+    fn new(mode: Word, value: Word) -> Param {
+        use Param::*;
+        match mode {
+            MODE_POSITION => Position(value),
+            MODE_IMMEDIATE => Immediate(value),
+            MODE_RELATIVE => Relative(value),
+            _ => panic!(("unrecognised mode", mode)),
+        }
+    }
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -32,6 +49,7 @@ enum Op {
     JumpIfFalse(Param, Param),
     LessThan(Param, Param, Param),
     Equal(Param, Param, Param),
+    AdjustBase(Param),
     Halt,
 }
 
@@ -47,6 +65,7 @@ impl Op {
             JumpIfFalse(_, _) => 3,
             LessThan(_, _, _) => 4,
             Equal(_, _, _) => 4,
+            AdjustBase(_) => 2,
             Halt => 1,
         }
     }
@@ -63,6 +82,7 @@ pub enum State {
 pub struct Emulator {
     memory: Vec<Word>,
     ip: Word,
+    sp: Word,
     input_buffer: VecDeque<Word>,
     output_buffer: VecDeque<Word>,
 }
@@ -72,6 +92,7 @@ impl Emulator {
         Emulator {
             memory: program.0.clone(),
             ip: 0,
+            sp: 0,
             input_buffer: VecDeque::new(),
             output_buffer: VecDeque::new(),
         }
@@ -82,12 +103,19 @@ impl Emulator {
         Emulator::new(&programs[0])
     }
 
-    pub fn set(&mut self, pos: Word, v: Word) {
-        let pos = pos as usize;
+    fn make_pointer(&mut self, pos: usize) -> &mut Word {
         if pos >= self.memory.len() {
-            self.memory.reserve(pos - self.memory.len() + 1);
+            self.memory.resize(pos + 1, 0);
         }
-        self.memory[pos] = v;
+        &mut self.memory[pos]
+    }
+
+    pub fn len(&self) -> usize { self.memory.len() }
+
+    pub fn resize(&mut self, new_len: usize) { self.memory.resize(new_len, 0) }
+
+    pub fn set(&mut self, pos: Word, v: Word) {
+        *self.make_pointer(pos as usize) = v;
     }
 
     pub fn get(&self, pos: Word) -> Word {
@@ -111,50 +139,41 @@ impl Emulator {
     }
 
     fn fetch(&self, pos: Word) -> Op {
+        let op = self.get(pos);
+        let (modes, opcode) = (op / 100, op % 100);
+
+        // Get the mode for 1-indexed parameter
+        macro_rules! mode {
+            ($i:literal) => ( modes / ((10 as Word).pow($i - 1)) % 10 );
+        }
+
+        // Get 1-indexed parameter
         macro_rules! p {
-            (0, $offset:literal) => ( Position(self.get(pos + $offset)) );
-            (1, $offset:literal) => ( Immediate(self.get(pos + $offset)) );
+            ($i:literal) => ( Param::new(mode!($i), self.get(pos + $i)) );
         }
 
+        // Get an Op with specified arity
         macro_rules! op {
-            ($t:path, $a:tt, $b:tt, $c:tt) => ( $t(p!($a, 1), p!($b, 2), p!($c, 3)) );
-            ($t:path, $a:tt, $b:tt) => ( $t(p!($a, 1), p!($b, 2)) );
-            ($t:path, $a:tt) => ( $t(p!($a, 1)) );
-            ($t:path) => ( $t );
+            ($t:path, 0) => ( $t );
+            ($t:path, 1) => ( $t(p!(1)) );
+            ($t:path, 2) => ( $t(p!(1), p!(2)) );
+            ($t:path, 3) => ( $t(p!(1), p!(2), p!(3)) );
         }
 
-        use Param::*;
         use Op::*;
-        match self.get(pos) {
-            00001 => op!(Add, 0, 0, 0),
-            00101 => op!(Add, 1, 0, 0),
-            01001 => op!(Add, 0, 1, 0),
-            01101 => op!(Add, 1, 1, 0),
-            00002 => op!(Mul, 0, 0, 0),
-            00102 => op!(Mul, 1, 0, 0),
-            01002 => op!(Mul, 0, 1, 0),
-            01102 => op!(Mul, 1, 1, 0),
-            00003 => op!(Read, 0),
-            00004 => op!(Write, 0),
-            00104 => op!(Write, 1),
-            00005 => op!(JumpIfTrue, 0, 0),
-            00105 => op!(JumpIfTrue, 1, 0),
-            01005 => op!(JumpIfTrue, 0, 1),
-            01105 => op!(JumpIfTrue, 1, 1),
-            00006 => op!(JumpIfFalse, 0, 0),
-            00106 => op!(JumpIfFalse, 1, 0),
-            01006 => op!(JumpIfFalse, 0, 1),
-            01106 => op!(JumpIfFalse, 1, 1),
-            00007 => op!(LessThan, 0, 0, 0),
-            00107 => op!(LessThan, 1, 0, 0),
-            01007 => op!(LessThan, 0, 1, 0),
-            01107 => op!(LessThan, 1, 1, 0),
-            00008 => op!(Equal, 0, 0, 0),
-            00108 => op!(Equal, 1, 0, 0),
-            01008 => op!(Equal, 0, 1, 0),
-            01108 => op!(Equal, 1, 1, 0),
-            00099 => op!(Halt),
-            _ => panic!("unknown opcode"),
+
+        match opcode {
+            1 => op!(Add, 3),
+            2 => op!(Mul, 3),
+            3 => op!(Read, 1),
+            4 => op!(Write, 1),
+            5 => op!(JumpIfTrue, 2),
+            6 => op!(JumpIfFalse, 2),
+            7 => op!(LessThan, 3),
+            8 => op!(Equal, 3),
+            9 => op!(AdjustBase, 1),
+            99 => Halt,
+            _ => panic!(("unknown opcode", opcode)),
         }
     }
 
@@ -163,24 +182,33 @@ impl Emulator {
         match param {
             Position(p) => self.get(*p),
             Immediate(v) => *v,
+            Relative(r) => self.get(self.sp + *r),
+        }
+    }
+
+    fn pointer(&mut self, param: &Param) -> &mut Word {
+        use Param::*;
+        match param {
+            Position(p) => self.make_pointer(*p as usize),
+            Relative(r) => self.make_pointer((self.sp + *r) as usize),
+            _ => panic!("invalid parameter for pointer"),
         }
     }
 
     pub fn step(&mut self) -> State {
         use Op::*;
-        use Param::*;
         let op = self.fetch(self.ip);
         match &op {
-            Add(a, b, Position(c)) => {
-                self.set(*c, self.value(a) + self.value(b));
+            Add(a, b, c) => {
+                *self.pointer(c) = self.value(a) + self.value(b);
             },
-            Mul(a, b, Position(c)) => {
-                self.set(*c, self.value(a) * self.value(b));
+            Mul(a, b, c) => {
+                *self.pointer(c) = self.value(a) * self.value(b);
             },
-            Read(Position(a)) => {
+            Read(a) => {
                 match self.input_buffer.pop_front() {
                     Some(v) => {
-                        self.set(*a, v);
+                        *self.pointer(a) = v;
                     },
                     None => {
                         // Don't increment instruction pointer, will re-try on next step()/run()
@@ -203,17 +231,19 @@ impl Emulator {
                     return State::Continue;     // Don't increment instruction pointer after jump
                 }
             },
-            LessThan(a, b, Position(c)) => {
-                self.set(*c, if self.value(a) < self.value(b) { 1 } else { 0 });
+            LessThan(a, b, c) => {
+                *self.pointer(c) = if self.value(a) < self.value(b) { 1 } else { 0 };
             },
-            Equal(a, b, Position(c)) => {
-                self.set(*c, if self.value(a) == self.value(b) { 1 } else { 0 });
+            Equal(a, b, c) => {
+                *self.pointer(c) = if self.value(a) == self.value(b) { 1 } else { 0 };
+            },
+            AdjustBase(a) => {
+                self.sp += self.value(a);
             },
             Halt => {
                 // Don't increment instruction pointer, will remain in halted state
                 return State::Halt
             },
-            _ => panic!("unknown op"),
         };
         self.ip += op.size();
         return State::Continue;

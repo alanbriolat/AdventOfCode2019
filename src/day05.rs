@@ -7,7 +7,7 @@ pub fn part1() -> intcode::Word {
     *emulator.read_all().last().unwrap()
 }
 
-pub fn part2() -> i32 {
+pub fn part2() -> intcode::Word {
     let mut emulator = intcode::Emulator::from_data_file("day05_input.txt");
     emulator.write(5);
     emulator.run();

@@ -53,11 +53,11 @@ fn run_amp_feedback_loops(base: &Emulator) -> Word {
     heap.map(|phases| amp_feedback_loop(base, phases.as_slice())).max().unwrap()
 }
 
-pub fn part1() -> i32 {
+pub fn part1() -> Word {
     run_amp_chains(&Emulator::from_data_file("day07_input.txt"))
 }
 
-pub fn part2() -> i32 {
+pub fn part2() -> Word {
     run_amp_feedback_loops(&Emulator::from_data_file("day07_input.txt"))
 }
 
