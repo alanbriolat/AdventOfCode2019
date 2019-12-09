@@ -18,8 +18,8 @@ impl FromStr for Program {
 
 #[derive(Debug,Eq,PartialEq)]
 enum Param {
+    Position(Word),
     Immediate(Word),
-    Position(usize),
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -36,7 +36,7 @@ enum Op {
 }
 
 impl Op {
-    fn size(&self) -> usize {
+    fn size(&self) -> Word {
         use Op::*;
         match self {
             Add(_, _, _) => 4,
@@ -62,7 +62,7 @@ pub enum State {
 #[derive(Clone,Debug)]
 pub struct Emulator {
     memory: Vec<Word>,
-    ip: usize,
+    ip: Word,
     input_buffer: VecDeque<Word>,
     output_buffer: VecDeque<Word>,
 }
@@ -82,11 +82,16 @@ impl Emulator {
         Emulator::new(&programs[0])
     }
 
-    pub fn set(&mut self, pos: usize, v: Word) {
+    pub fn set(&mut self, pos: Word, v: Word) {
+        let pos = pos as usize;
+        if pos >= self.memory.len() {
+            self.memory.reserve(pos - self.memory.len() + 1);
+        }
         self.memory[pos] = v;
     }
 
-    pub fn get(&self, pos: usize) -> Word {
+    pub fn get(&self, pos: Word) -> Word {
+        let pos = pos as usize;
         self.memory.get(pos).cloned().unwrap_or(0)
     }
 
@@ -105,9 +110,9 @@ impl Emulator {
         self.output_buffer.drain(..).collect()
     }
 
-    fn fetch(&self, pos: usize) -> Op {
+    fn fetch(&self, pos: Word) -> Op {
         macro_rules! p {
-            (0, $offset:literal) => ( Position(self.get(pos + $offset) as usize) );
+            (0, $offset:literal) => ( Position(self.get(pos + $offset)) );
             (1, $offset:literal) => ( Immediate(self.get(pos + $offset)) );
         }
 
@@ -156,8 +161,8 @@ impl Emulator {
     fn value(&self, param: &Param) -> Word {
         use Param::*;
         match param {
-            Immediate(v) => *v,
             Position(p) => self.get(*p),
+            Immediate(v) => *v,
         }
     }
 
@@ -188,13 +193,13 @@ impl Emulator {
             },
             JumpIfTrue(test, dest) => {
                 if self.value(test) != 0 {
-                    self.ip = self.value(dest) as usize;
+                    self.ip = self.value(dest);
                     return State::Continue;     // Don't increment instruction pointer after jump
                 }
             },
             JumpIfFalse(test, dest) => {
                 if self.value(test) == 0 {
-                    self.ip = self.value(dest) as usize;
+                    self.ip = self.value(dest);
                     return State::Continue;     // Don't increment instruction pointer after jump
                 }
             },
