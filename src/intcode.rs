@@ -82,14 +82,12 @@ impl Emulator {
         Emulator::new(&programs[0])
     }
 
-    pub fn set(&mut self, pos: usize, v: Word) -> Word {
-        let prev = self.memory[pos];
+    pub fn set(&mut self, pos: usize, v: Word) {
         self.memory[pos] = v;
-        return prev
     }
 
-    pub fn get(&mut self, pos: usize) -> Word {
-        return self.memory[pos]
+    pub fn get(&self, pos: usize) -> Word {
+        self.memory.get(pos).cloned().unwrap_or(0)
     }
 
     /// Write input value to emulator
@@ -109,8 +107,8 @@ impl Emulator {
 
     fn fetch(&self, pos: usize) -> Op {
         macro_rules! p {
-            (0, $offset:literal) => ( Position(self.memory[pos + $offset] as usize) );
-            (1, $offset:literal) => ( Immediate(self.memory[pos + $offset]) );
+            (0, $offset:literal) => ( Position(self.get(pos + $offset) as usize) );
+            (1, $offset:literal) => ( Immediate(self.get(pos + $offset)) );
         }
 
         macro_rules! op {
@@ -122,7 +120,7 @@ impl Emulator {
 
         use Param::*;
         use Op::*;
-        match self.memory[pos] {
+        match self.get(pos) {
             00001 => op!(Add, 0, 0, 0),
             00101 => op!(Add, 1, 0, 0),
             01001 => op!(Add, 0, 1, 0),
@@ -159,7 +157,7 @@ impl Emulator {
         use Param::*;
         match param {
             Immediate(v) => *v,
-            Position(p) => self.memory[*p],
+            Position(p) => self.get(*p),
         }
     }
 
@@ -169,15 +167,15 @@ impl Emulator {
         let op = self.fetch(self.ip);
         match &op {
             Add(a, b, Position(c)) => {
-                self.memory[*c] = self.value(a) + self.value(b);
+                self.set(*c, self.value(a) + self.value(b));
             },
             Mul(a, b, Position(c)) => {
-                self.memory[*c] = self.value(a) * self.value(b);
+                self.set(*c, self.value(a) * self.value(b));
             },
             Read(Position(a)) => {
                 match self.input_buffer.pop_front() {
                     Some(v) => {
-                        self.memory[*a] = v;
+                        self.set(*a, v);
                     },
                     None => {
                         // Don't increment instruction pointer, will re-try on next step()/run()
@@ -201,10 +199,10 @@ impl Emulator {
                 }
             },
             LessThan(a, b, Position(c)) => {
-                self.memory[*c] = if self.value(a) < self.value(b) { 1 } else { 0 };
+                self.set(*c, if self.value(a) < self.value(b) { 1 } else { 0 });
             },
             Equal(a, b, Position(c)) => {
-                self.memory[*c] = if self.value(a) == self.value(b) { 1 } else { 0 };
+                self.set(*c, if self.value(a) == self.value(b) { 1 } else { 0 });
             },
             Halt => {
                 // Don't increment instruction pointer, will remain in halted state
