@@ -41,6 +41,18 @@ impl Vector2D {
     pub fn manhattan_length(&self) -> i32 {
         self.x.abs() + self.y.abs()
     }
+
+    pub fn to_unit_vector(&self) -> Vector2D {
+        // Use GCD implementation copied from https://doc.rust-lang.org/std/ops/trait.Div.html
+        let mut x = self.x.abs();
+        let mut y = self.y.abs();
+        while y != 0 {
+            let t = y;
+            y = x % y;
+            x = t;
+        }
+        Vector2D{x: self.x / x, y: self.y / x}
+    }
 }
 
 macro_rules! point {
@@ -139,5 +151,25 @@ impl Line2D {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_point2d_to_unit_vector() {
+        // One coordinate is prime, so no division
+        assert_eq!(Vector2D{x: 12, y: 17}.to_unit_vector(), Vector2D{x: 12, y: 17});
+        assert_eq!(Vector2D{x: 11, y: 16}.to_unit_vector(), Vector2D{x: 11, y: 16});
+        // GCD is one of the coordinates
+        assert_eq!(Vector2D{x: 12, y: 36}.to_unit_vector(), Vector2D{x: 1, y: 3});
+        // GCD is not one of the coordinates
+        assert_eq!(Vector2D{x: 12, y: 16}.to_unit_vector(), Vector2D{x: 3, y: 4});
+        // Signs are preserved
+        assert_eq!(Vector2D{x: 12, y: -16}.to_unit_vector(), Vector2D{x: 3, y: -4});
+        assert_eq!(Vector2D{x: -12, y: 16}.to_unit_vector(), Vector2D{x: -3, y: 4});
+        assert_eq!(Vector2D{x: -12, y: -16}.to_unit_vector(), Vector2D{x: -3, y: -4});
     }
 }
