@@ -1,5 +1,6 @@
 #[macro_use] extern crate itertools;
 
+#[macro_use]
 pub mod util;
 pub mod intcode;
 pub mod day01;
