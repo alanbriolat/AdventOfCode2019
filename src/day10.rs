@@ -1,4 +1,5 @@
-use std::collections::{HashSet, HashMap, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{HashSet, HashMap};
 use crate::util;
 use crate::util::{Point2D, Vector2D};
 
@@ -44,20 +45,19 @@ fn max_visible(asteroids: &[Point2D]) -> (usize, usize) {
         .unwrap()
 }
 
-type InventoryItem = (Vector2D, VecDeque<Vector2D>);
+type InventoryItem = (Vector2D, Vec<Vector2D>);
 type Inventory = Vec<InventoryItem>;
 
 fn inventory(i: usize, asteroids: &[Point2D]) -> Inventory {
     let station = asteroids[i];
-    let mut data: HashMap<Vector2D, VecDeque<Vector2D>> = HashMap::new();
+    let mut data: HashMap<Vector2D, Vec<Vector2D>> = HashMap::new();
     for &a in asteroids[..i].iter().chain(asteroids[i+1..].iter()) {
         let pos = a - station;
         let unit = pos.to_unit_vector();
-        data.entry(unit).or_insert(VecDeque::new()).push_back(pos);
+        data.entry(unit).or_insert(Vec::new()).push(pos);
     }
     for direction in data.values_mut() {
-        let (s, _) = direction.as_mut_slices();
-        s.sort_by_key(|a| a.manhattan_length());
+        direction.sort_by_key(|a| Reverse(a.manhattan_length()));
     }
     data.into_iter().collect()
 }
@@ -93,7 +93,7 @@ impl<'a> Iterator for ShootingIterator<'a> {
             None
         } else {
             loop {
-                if let Some(a) = self.inventory[self.index_iterator.next().unwrap()].1.pop_front() {
+                if let Some(a) = self.inventory[self.index_iterator.next().unwrap()].1.pop() {
                     self.count -= 1;
                     return Some(a);
                 }
