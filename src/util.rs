@@ -29,6 +29,7 @@ pub fn read_data<T>(filename: &str) -> Vec<T>
 
 macro_rules! vector {
     ($x:expr, $y:expr) => { Vector2D{x: $x, y: $y} };
+    ($x:expr, $y:expr, $z:expr) => { Vector3D{x: $x, y: $y, z: $z} };
 }
 
 #[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
@@ -55,8 +56,62 @@ impl Vector2D {
     }
 }
 
+#[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
+pub struct Vector3D {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+impl Vector3D {
+    pub fn manhattan_length(&self) -> i32 {
+        self.x.abs() + self.y.abs() + self.z.abs()
+    }
+}
+
+impl ops::Add<Vector3D> for Vector3D {
+    type Output = Vector3D;
+
+    fn add(self, rhs: Vector3D) -> Self::Output {
+        Vector3D {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        }
+    }
+}
+
+impl ops::AddAssign<Vector3D> for Vector3D {
+    fn add_assign(&mut self, rhs: Vector3D) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+        self.z += rhs.z;
+    }
+}
+
+impl ops::Sub<Vector3D> for Vector3D {
+    type Output = Vector3D;
+
+    fn sub(self, rhs: Vector3D) -> Self::Output {
+        Vector3D {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+
+impl ops::SubAssign<Vector3D> for Vector3D {
+    fn sub_assign(&mut self, rhs: Vector3D) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+        self.z -= rhs.z;
+    }
+}
+
 macro_rules! point {
     ($x:expr, $y:expr) => { Point2D{x: $x, y: $y} };
+    ($x:expr, $y:expr, $z:expr) => { Point3D{x: $x, y: $y, z: $z} };
 }
 
 #[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
@@ -80,6 +135,8 @@ impl ops::Sub<Point2D> for Point2D {
         vector!(self.x - rhs.x, self.y - rhs.y)
     }
 }
+
+pub type Point3D = Vector3D;
 
 #[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
 pub struct Line2D {
