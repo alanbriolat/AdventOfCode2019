@@ -1,4 +1,7 @@
+extern crate num;
+use num::Integer;
 use crate::util::{Vector3D, Point3D, read_lines};
+use std::collections::HashMap;
 
 fn parse_point3d(input: &str) -> Point3D {
     let parts: Vec<&str> = input[1 .. input.len()-1].split(", ").collect();
@@ -13,7 +16,7 @@ fn parse_input_points(filename: &str) -> Vec<Point3D> {
     read_lines(filename).into_iter().map(|x| parse_point3d(x.as_str())).collect()
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Clone,Debug,Eq,PartialEq,Hash)]
 struct Moon {
     position: Point3D,
     velocity: Vector3D,
@@ -25,57 +28,134 @@ impl Moon {
     }
 }
 
-fn read_input(filename: &str) -> Vec<Moon> {
+type State = Vec<Moon>;
+type SubState = Vec<(i32, i32)>;
+
+#[derive(Clone)]
+struct Simulation {
+    initial: State,
+    state: State,
+}
+
+impl Simulation {
+    fn new(state: &State) -> Simulation {
+        Simulation {
+            initial: state.clone(),
+            state: state.clone(),
+        }
+    }
+}
+
+impl Iterator for Simulation {
+    type Item = State;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.state = simulate_step(&self.state);
+        return Some(self.state.clone());
+    }
+}
+
+fn read_input(filename: &str) -> State {
     parse_input_points(filename).into_iter().map(|p| Moon{position: p, velocity: vector!(0, 0, 0)}).collect()
 }
 
-/// Direction that a should move to go towards b
-#[inline(always)]
-fn direction(a: i32, b: i32) -> i32 {
-    (b - a).signum()
-}
-
-fn simulate_step(moons: &mut Vec<Moon>) {
+fn simulate_step(moons: &State) -> State {
+    let mut new = moons.clone();
     // Update velocities
-    for i in 0 .. moons.len() {
-        for j in 0 .. moons.len() {
+    for i in 0 .. new.len() {
+        for j in 0 .. new.len() {
             if i != j {
                 // Get velocity change to pull a towards b
-                let dv = Vector3D {
-                    x: direction(moons[i].position.x, moons[j].position.x),
-                    y: direction(moons[i].position.y, moons[j].position.y),
-                    z: direction(moons[i].position.z, moons[j].position.z),
-                };
+                let dv = (new[j].position - new[i].position).signum();
                 // Apply to a (the inverse will get applied to b later in the iteration)
                 // TODO: only process each pair once
-                moons[i].velocity += dv;
+                new[i].velocity += dv;
             }
         }
     }
     // Update positions
-    for moon in moons.iter_mut() {
+    for moon in new.iter_mut() {
         moon.position += moon.velocity;
     }
+    return new;
 }
 
-fn simulate(moons: &mut Vec<Moon>, steps: usize) {
+fn simulate(moons: &State, steps: usize) -> State {
+    let mut state: State = moons.clone();
     for _ in 0 .. steps {
-        simulate_step(moons);
+        state = simulate_step(&state);
     }
+    return state;
 }
 
-fn total_energy(moons: &Vec<Moon>) -> i32 {
+fn total_energy(moons: &State) -> i32 {
     moons.iter().map(|moon| moon.energy()).sum()
 }
 
 pub fn part1() -> i32 {
-    let mut moons = read_input("day12_input.txt");
-    simulate(&mut moons, 1000);
-    total_energy(&moons)
+    let mut simulation = Simulation::new(&read_input("day12_input.txt"));
+    let last = simulation.nth(999).unwrap();
+    total_energy(&last)
 }
 
-pub fn part2() -> i32 {
-    0
+fn substate_x(state: &State) -> SubState {
+    state.iter().map(|moon| (moon.position.x, moon.velocity.x)).collect()
+}
+
+fn substate_y(state: &State) -> SubState {
+    state.iter().map(|moon| (moon.position.y, moon.velocity.y)).collect()
+}
+
+fn substate_z(state: &State) -> SubState {
+    state.iter().map(|moon| (moon.position.z, moon.velocity.z)).collect()
+}
+
+pub fn part2() -> usize {
+    let simulation = Simulation::new(&read_input("day12_input.txt"));
+    let mut substates_x: HashMap<SubState, usize> = HashMap::new();
+    let mut substates_y: HashMap<SubState, usize> = HashMap::new();
+    let mut substates_z: HashMap<SubState, usize> = HashMap::new();
+    let mut cycle_x: Option<(usize, usize)> = None;
+    let mut cycle_y: Option<(usize, usize)> = None;
+    let mut cycle_z: Option<(usize, usize)> = None;
+    let mut count = 0;
+    substates_x.insert(substate_x(&simulation.state), count);
+    substates_y.insert(substate_y(&simulation.state), count);
+    substates_z.insert(substate_z(&simulation.state), count);
+    for state in simulation {
+        count += 1;
+        if cycle_x.is_none() {
+            let substate = substate_x(&state);
+            if let Some(pos) = substates_x.get(&substate) {
+                cycle_x = Some((*pos, count - *pos));
+                println!("cycle_x: {:?}", cycle_x);
+            } else {
+                substates_x.insert(substate, count);
+            }
+        }
+        if cycle_y.is_none() {
+            let substate = substate_y(&state);
+            if let Some(pos) = substates_y.get(&substate) {
+                cycle_y = Some((*pos, count - *pos));
+                println!("cycle_y: {:?}", cycle_y);
+            } else {
+                substates_y.insert(substate, count);
+            }
+        }
+        if cycle_z.is_none() {
+            let substate = substate_z(&state);
+            if let Some(pos) = substates_z.get(&substate) {
+                cycle_z = Some((*pos, count - *pos));
+                println!("cycle_z: {:?}", cycle_z);
+            } else {
+                substates_z.insert(substate, count);
+            }
+        }
+        if cycle_x.is_some() && cycle_y.is_some() && cycle_z.is_some() {
+            break;
+        }
+    }
+    cycle_x.unwrap().1.lcm(&cycle_y.unwrap().1).lcm(&cycle_z.unwrap().1)
 }
 
 #[cfg(test)]
@@ -109,16 +189,16 @@ mod tests {
 
     #[test]
     fn test_simulate_step_example1() {
-        let mut moons = read_input("day12_example1.txt");
-        simulate_step(&mut moons);
-        assert_eq!(moons, vec![
+        let moons = read_input("day12_example1.txt");
+        let a = simulate_step(&moons);
+        assert_eq!(a, vec![
             Moon{position: point!(2, -1, 1), velocity: vector!(3, -1, -1)},
             Moon{position: point!(3, -7, -4), velocity: vector!(1, 3, 3)},
             Moon{position: point!(1, -7, 5), velocity: vector!(-3, 1, -3)},
             Moon{position: point!(2, 2, 0), velocity: vector!(-1, -3, 1)},
         ]);
-        simulate_step(&mut moons);
-        assert_eq!(moons, vec![
+        let b = simulate_step(&a);
+        assert_eq!(b, vec![
             Moon{position: point!(5, -3, -1), velocity: vector!(3, -2, -2)},
             Moon{position: point!(1, -2, 2), velocity: vector!(-2, 5, 6)},
             Moon{position: point!(1, -4, -1), velocity: vector!(0, 3, -6)},
@@ -128,9 +208,9 @@ mod tests {
 
     #[test]
     fn test_simulate_example2() {
-        let mut moons = read_input("day12_example2.txt");
-        simulate(&mut moons, 100);
-        assert_eq!(moons, vec![
+        let moons = read_input("day12_example2.txt");
+        let last = simulate(&moons, 100);
+        assert_eq!(last, vec![
             Moon{position: point!(8, -12, -9), velocity: vector!(-7, 3, 0)},
             Moon{position: point!(13, 16, -3), velocity: vector!(3, -11, -5)},
             Moon{position: point!(-29, -11, -1), velocity: vector!(-3, 7, 4)},
@@ -140,9 +220,9 @@ mod tests {
 
     #[test]
     fn test_total_energy_example2() {
-        let mut moons = read_input("day12_example2.txt");
-        simulate(&mut moons, 100);
-        assert_eq!(total_energy(&moons), 1940);
+        let moons = read_input("day12_example2.txt");
+        let last = simulate(&moons, 100);
+        assert_eq!(total_energy(&last), 1940);
     }
 
     #[test]
@@ -152,6 +232,6 @@ mod tests {
 
     #[test]
     fn test_part2() {
-        assert_eq!(part2(), unimplemented!());
+        assert_eq!(part2(), 334945516288044);
     }
 }

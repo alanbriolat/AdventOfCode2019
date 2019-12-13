@@ -56,7 +56,7 @@ impl Vector2D {
     }
 }
 
-#[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
+#[derive(Clone,Copy,Debug,Default,Eq,Hash,PartialEq)]
 pub struct Vector3D {
     pub x: i32,
     pub y: i32,
@@ -66,6 +66,14 @@ pub struct Vector3D {
 impl Vector3D {
     pub fn manhattan_length(&self) -> i32 {
         self.x.abs() + self.y.abs() + self.z.abs()
+    }
+
+    pub fn signum(&self) -> Vector3D {
+        Vector3D {
+            x: self.x.signum(),
+            y: self.y.signum(),
+            z: self.z.signum(),
+        }
     }
 }
 
