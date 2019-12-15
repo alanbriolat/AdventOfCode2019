@@ -54,6 +54,56 @@ impl Vector2D {
         }
         Vector2D{x: self.x / x, y: self.y / x}
     }
+
+    pub fn min(&self, other: &Vector2D) -> Vector2D {
+        Vector2D {
+            x: min(self.x, other.x),
+            y: min(self.y, other.y),
+        }
+    }
+
+    pub fn max(&self, other: &Vector2D) -> Vector2D {
+        Vector2D {
+            x: max(self.x, other.x),
+            y: max(self.y, other.y),
+        }
+    }
+}
+
+impl ops::Add<Vector2D> for Vector2D {
+    type Output = Vector2D;
+
+    fn add(self, rhs: Vector2D) -> Self::Output {
+        Vector2D {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl ops::AddAssign<Vector2D> for Vector2D {
+    fn add_assign(&mut self, rhs: Vector2D) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
+impl ops::Sub<Vector2D> for Vector2D {
+    type Output = Vector2D;
+
+    fn sub(self, rhs: Vector2D) -> Self::Output {
+        Vector2D {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
+impl ops::SubAssign<Vector2D> for Vector2D {
+    fn sub_assign(&mut self, rhs: Vector2D) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+    }
 }
 
 #[derive(Clone,Copy,Debug,Default,Eq,Hash,PartialEq)]
@@ -122,29 +172,36 @@ macro_rules! point {
     ($x:expr, $y:expr, $z:expr) => { Point3D{x: $x, y: $y, z: $z} };
 }
 
-#[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
-pub struct Point2D {
-    pub x: i32,
-    pub y: i32,
-}
-
-impl ops::Add<Vector2D> for Point2D {
-    type Output = Point2D;
-
-    fn add(self, rhs: Vector2D) -> Point2D {
-        point!(self.x + rhs.x, self.y + rhs.y)
-    }
-}
-
-impl ops::Sub<Point2D> for Point2D {
-    type Output = Vector2D;
-
-    fn sub(self, rhs: Point2D) -> Vector2D {
-        vector!(self.x - rhs.x, self.y - rhs.y)
-    }
-}
-
+pub type Point2D = Vector2D;
 pub type Point3D = Vector3D;
+
+#[derive(Clone,Debug,Eq,PartialEq)]
+pub struct BoundingBox2D {
+    pub min: Point2D,
+    pub max: Point2D,
+}
+
+impl BoundingBox2D {
+    pub fn new(initial: &Point2D) -> BoundingBox2D {
+        BoundingBox2D {
+            min: initial.clone(),
+            max: initial.clone(),
+        }
+    }
+
+    pub fn include(&mut self, point: &Point2D) {
+        self.min = self.min.min(point);
+        self.max = self.max.max(point);
+    }
+
+    pub fn contains(&self, point: &Point2D) -> bool {
+        self.min.x <= point.x && point.x <= self.max.x && self.min.y <= point.y && point.y <= self.max.y
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item=Point2D> + '_ {
+        (self.min.y ..= self.max.y).flat_map(move |y| (self.min.x ..= self.max.x).map(move |x| point!(x, y)))
+    }
+}
 
 #[derive(Clone,Copy,Debug,Eq,Hash,PartialEq)]
 pub struct Line2D {

@@ -38,4 +38,6 @@ fn main() {
     run!(day12::part2());
     run!(day13::part1());
     run!(day13::part2());
+    run!(day15::part1());
+    run!(day15::part2());
 }
