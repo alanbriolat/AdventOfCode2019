@@ -86,7 +86,7 @@ impl Factory {
     fn produce(&mut self, name: &String, amount: i64) {
         if let Some(reaction) = self.reactions.get(name) {
             let reaction = reaction.clone();
-            let count = (amount as f32 / reaction.output.amount as f32).ceil() as i64;
+            let count = (amount as f64 / reaction.output.amount as f64).ceil() as i64;
             for input in reaction.inputs.iter() {
                 self.consume(&input.name, input.amount * count);
             }
@@ -144,8 +144,7 @@ mod tests {
 
     #[test]
     fn test_max_fuel_production() {
-        // Not sure if my code is wrong, or the first example is wrong...
-        //assert_eq!(max_fuel_production("day14_example3.txt"), 82892753);
+        assert_eq!(max_fuel_production("day14_example3.txt"), 82892753);
         assert_eq!(max_fuel_production("day14_example4.txt"), 5586022);
         assert_eq!(max_fuel_production("day14_example5.txt"), 460664);
     }
