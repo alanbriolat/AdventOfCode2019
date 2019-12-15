@@ -1,7 +1,6 @@
+use std::collections::{HashMap, VecDeque};
 use crate::intcode::*;
 use crate::util::{Vector2D, Point2D, BoundingBox2D};
-use std::collections::{HashMap, VecDeque};
-use std::cmp::min;
 
 #[derive(Copy,Clone,Debug)]
 enum Direction {
@@ -51,6 +50,7 @@ impl From<Word> for Tile {
 struct State {
     emulator: Emulator,
     position: Point2D,
+    distance: usize,
     tile: Tile,
 }
 
@@ -64,6 +64,7 @@ impl State {
         return State {
             emulator: e,
             position,
+            distance: self.distance + 1,
             tile,
         }
     }
@@ -71,8 +72,8 @@ impl State {
 
 struct Droid {
     emulator: Emulator,
-    map: HashMap<Point2D, Tile>,
-    oxygen: Option<Point2D>,
+    map: HashMap<Point2D, State>,
+    oxygen: Option<(Point2D, usize)>,
 }
 
 impl Droid {
@@ -89,38 +90,44 @@ impl Droid {
         let directions = [Direction::North, Direction::South, Direction::West, Direction::East];
         let mut queue: VecDeque<State> = VecDeque::new();
         // Record the starting position as floor
-        self.map.insert(point!(0, 0), Tile::Floor);
-        queue.push_back(State{emulator: self.emulator.clone(), position: point!(0, 0), tile: Tile::Floor});
+        let initial = State{emulator: self.emulator.clone(), position: point!(0, 0), distance: 0, tile: Tile::Floor};
+        self.map.insert(point!(0, 0), initial.clone());
+        queue.push_back(initial);
         // Queue-based flood fill algorithm
         while let Some(state) = queue.pop_front() {
             for d in directions.iter().cloned() {
-                let position = state.position + From::from(d);
-                // Only try and fill empty tiles
-                if self.map.get(&position).unwrap_or(&Tile::Empty) == &Tile::Empty {
-                    let next_state = state.step(d);
-                    self.map.insert(next_state.position, next_state.tile);
-                    // If we found the oxygen system, record its position
-                    if next_state.tile == Tile::Oxygen {
-                        self.oxygen = Some(next_state.position.clone());
-                    }
-                    // Stop when walls are found
-                    if next_state.tile != Tile::Wall {
-                        queue.push_back(next_state);
+                let next_position = state.position + From::from(d);
+                // Only process tiles that are empty
+                if let Some(prev_state) = self.map.get(&next_position) {
+                    if prev_state.tile != Tile::Empty {
+                        continue;
                     }
                 }
+                // Find out what's in this direction
+                let next_state = state.step(d);
+                // If we found the oxygen system, record its position
+                if next_state.tile == Tile::Oxygen {
+                    self.oxygen = Some((next_state.position.clone(), next_state.distance));
+                }
+                // If it's not a wall, continue flood fill from that point
+                if next_state.tile != Tile::Wall {
+                    queue.push_back(next_state.clone());
+                }
+                // Record what's at this new position
+                self.map.insert(next_state.position, next_state);
             }
         }
     }
 
+    #[allow(dead_code)]
     fn print_map(&self) {
-        let mut top_left = point!(0, 0);
-        let mut bottom_right = point!(0, 0);
         let mut bbox = BoundingBox2D::new(&point!(0, 0));
         for p in self.map.keys() {
             bbox.include(p);
         }
         for p in bbox.iter() {
-            print!("{}", match self.map.get(&p).unwrap_or(&Tile::Empty) {
+            let tile = self.map.get(&p).map(|state| state.tile).unwrap_or(Tile::Empty);
+            print!("{}", match tile {
                 Tile::Empty => ' ',
                 Tile::Wall => '#',
                 Tile::Floor => '.',
@@ -134,11 +141,11 @@ impl Droid {
     }
 }
 
-pub fn part1() -> i32 {
+pub fn part1() -> usize {
     let mut droid = Droid::from_data_file("day15_input.txt");
     droid.discover_map();
-    droid.print_map();
-    0
+//    droid.print_map();
+    droid.oxygen.unwrap().1
 }
 
 pub fn part2() -> i32 {
@@ -151,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_part1() {
-        assert_eq!(part1(), unimplemented!());
+        assert_eq!(part1(), 282);
     }
 
     #[test]
