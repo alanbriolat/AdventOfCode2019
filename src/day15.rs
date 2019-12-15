@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, VecDeque};
 use crate::intcode::*;
 use crate::util::{Vector2D, Point2D, BoundingBox2D};
@@ -119,6 +120,31 @@ impl Droid {
         }
     }
 
+    /// Use flood fill to replace floor with oxygen
+    fn flow_oxygen(&mut self) -> usize {
+        let directions = [Direction::North, Direction::South, Direction::West, Direction::East];
+        let mut furthest: usize = 0;
+        let mut queue: VecDeque<(Point2D, usize)> = VecDeque::new();
+        queue.push_back((self.oxygen.unwrap().0, 0));
+
+        while let Some((p, distance)) = queue.pop_front() {
+            furthest = max(furthest, distance);
+            for d in directions.iter().cloned() {
+                let next_position = p + From::from(d);
+                if let Some(state) = self.map.get_mut(&next_position) {
+                    // Only process tiles that are floor
+                    if state.tile != Tile::Floor {
+                        continue;
+                    }
+                    state.tile = Tile::Oxygen;
+                    queue.push_back((next_position, distance + 1));
+                }
+            }
+        }
+
+        return furthest;
+    }
+
     #[allow(dead_code)]
     fn print_map(&self) {
         let mut bbox = BoundingBox2D::new(&point!(0, 0));
@@ -148,8 +174,11 @@ pub fn part1() -> usize {
     droid.oxygen.unwrap().1
 }
 
-pub fn part2() -> i32 {
-    0
+pub fn part2() -> usize {
+    let mut droid = Droid::from_data_file("day15_input.txt");
+    droid.discover_map();
+//    droid.print_map();
+    droid.flow_oxygen()
 }
 
 #[cfg(test)]
@@ -163,6 +192,6 @@ mod tests {
 
     #[test]
     fn test_part2() {
-        assert_eq!(part2(), unimplemented!());
+        assert_eq!(part2(), 286);
     }
 }
