@@ -4,6 +4,10 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use crate::util::read_lines;
 
+fn div_ceil(a: i64, b: i64) -> i64 {
+    a / b + (a % b).signum()
+}
+
 #[derive(Clone,Debug)]
 struct Component {
     name: String,
@@ -86,7 +90,7 @@ impl Factory {
     fn produce(&mut self, name: &String, amount: i64) {
         if let Some(reaction) = self.reactions.get(name) {
             let reaction = reaction.clone();
-            let count = (amount as f64 / reaction.output.amount as f64).ceil() as i64;
+            let count = div_ceil(amount, reaction.output.amount);
             for input in reaction.inputs.iter() {
                 self.consume(&input.name, input.amount * count);
             }
