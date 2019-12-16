@@ -63,14 +63,11 @@ fn simulate_step(moons: &State) -> State {
     let mut new = moons.clone();
     // Update velocities
     for i in 0 .. new.len() {
-        for j in 0 .. new.len() {
-            if i != j {
-                // Get velocity change to pull a towards b
-                let dv = (new[j].position - new[i].position).signum();
-                // Apply to a (the inverse will get applied to b later in the iteration)
-                // TODO: only process each pair once
-                new[i].velocity += dv;
-            }
+        for j in i + 1 .. new.len() {
+            // Get velocity change to pull a towards b
+            let dv = (new[j].position - new[i].position).signum();
+            new[i].velocity += dv;
+            new[j].velocity -= dv;
         }
     }
     // Update positions
