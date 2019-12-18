@@ -106,6 +106,17 @@ impl ops::SubAssign<Vector2D> for Vector2D {
     }
 }
 
+impl ops::Mul<i32> for Vector2D {
+    type Output = Vector2D;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        Vector2D {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
+    }
+}
+
 #[derive(Clone,Copy,Debug,Default,Eq,Hash,PartialEq)]
 pub struct Vector3D {
     pub x: i32,

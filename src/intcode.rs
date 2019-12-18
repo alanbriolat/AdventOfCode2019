@@ -1,6 +1,8 @@
 use std::str::FromStr;
 use std::num::ParseIntError;
 use std::collections::VecDeque;
+use std::iter::FromIterator;
+use std::iter::repeat_with;
 use crate::util;
 
 pub type Word = i64;
@@ -136,6 +138,29 @@ impl Emulator {
     /// Read all unread output from emulator
     pub fn read_all(&mut self) -> Vec<Word> {
         self.output_buffer.drain(..).collect()
+    }
+
+    /// Write `s` to emulator as ASCII bytes, terminated by a newline
+    pub fn write_line(&mut self, s: &str) {
+        for b in s.bytes() {
+            self.write(b as Word);
+        }
+        self.write(b'\n' as Word);
+    }
+
+    /// Read a string from emulator output, until end of output or (discarded) newline character
+    pub fn read_line(&mut self) -> Option<String> {
+        if self.output_buffer.len() == 0 {
+            None
+        } else {
+            Some(
+                String::from_iter(
+                    repeat_with(|| self.read())
+                        .flatten()
+                        .map(|c| c as u8 as char)
+                        .take_while(|&c| c != '\n'))
+            )
+        }
     }
 
     fn fetch(&self, pos: Word) -> Op {
