@@ -159,46 +159,25 @@ impl PathDB {
             .collect()
     }
 
-    fn topological_sort(&self) -> Vec<Node> {
-        // Clone the dependencies so we can drop dependencies as nodes are visited
-        let mut dependencies = self.dependencies.clone();
-        // Queue of nodes that have no dependencies, only queuing each node once
-        let mut next: QueueOnce<Node> = QueueOnce::new();
-
-        // Build the initial queue of nodes with no dependencies (making sure Start is at the front)
-        next.push_back(Node::Start);
-        for (node, deps) in dependencies.iter() {
-            if deps.is_empty() {
-                next.push_back(*node);
+    /// Get valid extensions of `path`, taking into account dependencies and nodes already visited
+    fn continue_path(&self, path: &[Node]) -> Vec<Vec<Node>> {
+        let mut paths: Vec<Vec<Node>> = Vec::new();
+        let keys = HashSet::from_iter(path.iter().cloned());
+        for (next, deps) in self.dependencies.iter() {
+            if !keys.contains(next) && deps.difference(&keys).count() == 0 {
+                let mut next_path = Vec::new();
+                next_path.extend_from_slice(path);
+                next_path.push(*next);
+                paths.push(next_path);
             }
         }
-
-        // Ordered nodes, starting at Start (which is an unrecorded dependency of everything)
-        let mut path: Vec<Node> = vec![next.pop_front().unwrap()];
-        // Process nodes to get a valid ordering
-        while let Some(node) = next.pop_front() {
-            println!("processing node {:?}, remaining: {:?}", node, next.queue);
-            // This node has no dependencies, so can include it in the path
-            path.push(node);
-            // Remove the node from dependencies of other nodes
-            for (other, deps) in dependencies.iter_mut() {
-                if deps.contains(&node) {
-                    deps.remove(&node);
-                    // If this node now has no dependencies, put it in the queue
-                    if deps.is_empty() {
-                        next.push_back(*other);
-                    }
-                }
-            }
-        }
-
-        // TODO: need to generate all possible orderings to then evaluate path cost of each?
-        path
+        return paths;
     }
 }
 
 impl From<&Map> for PathDB {
     fn from(map: &Map) -> Self {
+        // TODO: check than the acyclic graph assumption holds true - should only see each node once
         let mut paths = PathDB::new();
         let mut queue: VecDeque<(Point2D, Edge, Point2D, Node)> = VecDeque::new();
         queue.push_back((map.start.clone(), Edge::new(), map.start.clone(), Node::Start));
@@ -237,6 +216,41 @@ impl From<&Map> for PathDB {
             }
         }
         return paths;
+    }
+}
+
+/// Depth-first-search iteration of valid node visit orderings
+struct PathGenerator<'a> {
+    path_db: &'a PathDB,
+    stack: Vec<Vec<Node>>,
+}
+
+impl<'a> PathGenerator<'a> {
+    fn new(path_db: &'a PathDB) -> PathGenerator<'a> {
+        PathGenerator {
+            path_db,
+            stack: vec![vec![Node::Start]],
+        }
+    }
+}
+
+impl<'a> Iterator for PathGenerator<'a> {
+    type Item = Vec<Node>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Loop until we return something
+        loop {
+            if let Some(path) = self.stack.pop() {
+                let next_paths = self.path_db.continue_path(&path);
+                if next_paths.is_empty() {
+                    break Some(path);
+                } else {
+                    self.stack.extend(next_paths);
+                }
+            } else {
+                break None;
+            }
+        }
     }
 }
 
@@ -321,6 +335,10 @@ fn shortest_path(filename: &str) -> usize {
     println!("Start -> Key('a') reachable: {:?}", reachable.get(Node::Start, Node::Key('a')));
     let path_f_to_c = reachable.get_path(Node::Key('f'), Node::Key('c'));
     println!("Key('f') -> Key('c') route: {:?}", path_f_to_c);
+    let mut pathgen = PathGenerator::new(&paths);
+    for p in pathgen {
+        println!("path: {:?}", p);
+    }
     0
 }
 
