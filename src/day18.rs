@@ -20,23 +20,45 @@ the dependency tree should constrain the TSP to a more reasonable set of possibi
 use std::collections::{HashSet, VecDeque, HashMap};
 use std::hash::Hash;
 use std::iter::FromIterator;
-use std::ops::{Deref, DerefMut};
+use std::ops::{self, Deref, DerefMut};
 use crate::util::{self, BoundingBox2D, Point2D, Vector2D};
 
 const TILE_WALL: char = '#';
 const TILE_FLOOR: char = '.';
-const TILE_START: char = '@';
+const TILE_ENTRANCE: char = '@';
 const DIRECTIONS: [Vector2D; 4] = [vector!(0, -1), vector!(1, 0), vector!(0, 1), vector!(-1, 0)];
 
+
+/// Node: a point of interest in the map
 #[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
 enum Node {
-    Start,
+    Entrance,
     Key(char),
 }
 
+/// Route: a sequence of nodes to visit, without specifics of adjacency, cost, etc.
+#[derive(Clone,Debug)]
+struct Route(Vec<Node>);
+deref!(Route, Vec<Node>);
+
+impl Route {
+    fn new() -> Route {
+        Route(Vec::new())
+    }
+
+    /// Iterate over `(from, to)` pairs along the route.
+    fn segments<'a>(&'a self) -> impl Iterator<Item=(Node, Node)> + 'a {
+        self.0.windows(2).map(|w| (w[0], w[1]))
+    }
+}
+
+
+/// Edge: a connection between adjacent nodes
 #[derive(Clone,Debug)]
 struct Edge {
+    /// Cost: the number of steps to get between the two nodes
     cost: usize,
+    /// Requirements: the keys that must be held (i.e. nodes that must have been visited) to use the edge
     requirements: HashSet<Node>,
 }
 
@@ -50,16 +72,19 @@ impl Edge {
     }
 }
 
+
+/// Map: the 2D tile representation of the input map
 #[derive(Debug)]
 struct Map {
     data: Vec<char>,
     width: usize,
     height: usize,
     bbox: BoundingBox2D,
-    start: Point2D,
+    entrance: Point2D,
 }
 
 impl Map {
+    /// Construct the map from an input file
     fn from_data_file(filename: &str) -> Map {
         let lines = util::read_lines(filename);
         let height = lines.len();
@@ -71,13 +96,14 @@ impl Map {
         for line in lines {
             data.extend(line.chars())
         }
-        let mut map = Map {data, width, height, bbox, start: point!(0, 0)};
-        map.start = map.bbox.iter()
-            .find(|p| map.get(p).unwrap() == TILE_START)
+        let mut map = Map {data, width, height, bbox, entrance: point!(0, 0)};
+        map.entrance = map.bbox.iter()
+            .find(|p| map.get(p).unwrap() == TILE_ENTRANCE)
             .unwrap();
         return map;
     }
 
+    /// Get the tile character at `p`
     fn get(&self, p: &Point2D) -> Option<char> {
         if !self.bbox.contains(p) {
             None
@@ -87,46 +113,23 @@ impl Map {
     }
 }
 
-struct QueueOnce<T: Copy + Eq + Hash> {
-    queue: VecDeque<T>,
-    seen: HashSet<T>,
-}
 
-impl<T: Copy + Eq + Hash> QueueOnce<T> {
-    fn new() -> QueueOnce<T> {
-        QueueOnce {
-            queue: VecDeque::new(),
-            seen: HashSet::new(),
-        }
-    }
-
-    fn push_back(&mut self, x: T) {
-        if self.seen.insert(x) {
-            self.queue.push_back(x);
-        }
-    }
-
-    fn pop_front(&mut self) -> Option<T> {
-        self.queue.pop_front()
-    }
-}
-
+/// Node graph: an acyclic graph representation of the input map, containing only information
+/// relating to nodes and moving between them.
 #[derive(Clone,Debug)]
-struct PathDB {
+struct NodeGraph {
     /// Adjacency map for traversing between nodes
     adjacent: HashMap<Node, HashMap<Node, Edge>>,
-    /// Dependencies (key ownership) that must be satisfied to get from Start to a particular node
-    dependencies: HashMap<Node, HashSet<Node>>,
-    /// Nodes that are reachable by following a particular edge without backtracking
-    reachable: HashMap<(Node, Node), HashSet<Node>>,
+    /// Requirements (nodes visited AKA keys held) that must be met to visit a node for the first
+    /// time, i.e. the sum of all edge requirements to get to each node from Entrance
+    requirements: HashMap<Node, HashSet<Node>>,
 }
 
-impl PathDB {
-    fn new() -> PathDB {
-        PathDB {
+impl NodeGraph {
+    fn new() -> NodeGraph {
+        NodeGraph {
             adjacent: HashMap::new(),
-            dependencies: HashMap::from(vec![(Node::Start, HashSet::new())].into_iter().collect()),
-            reachable: HashMap::new(),
+            requirements: HashMap::from(vec![(Node::Entrance, HashSet::new())].into_iter().collect()),
         }
     }
 
@@ -144,43 +147,44 @@ impl PathDB {
         // 1) Must have been to every node in the edge's requirements (i.e. picked up the relevant keys)
         let mut b_deps: HashSet<Node> = e.requirements.clone();
         // 2) Must have satisfied the requirements to get to a first
-        if let Some(a_deps) = self.dependencies.get(&a) {
+        if let Some(a_deps) = self.requirements.get(&a) {
             b_deps.extend(a_deps);
         }
         // (Update the dependency set)
-        self.dependencies.entry(b).or_insert(HashSet::new()).extend(b_deps);
+        self.requirements.entry(b).or_insert(HashSet::new()).extend(b_deps);
     }
 
+    /// Get set of nodes adjacent to `n`, excluding `from`
     fn get_adjacent_nodes(&self, n: Node, from: Node) -> HashSet<Node> {
-        self.adjacent
-            .get(&n).unwrap()
-            .iter()
-            .filter_map(|(&k, _v)| if k == from { None } else { Some(k) })
-            .collect()
+        let mut adjacent: HashSet<Node> = self.adjacent.get(&n)
+            .map(|x| x.keys().cloned().collect())
+            .unwrap_or(HashSet::new());
+        adjacent.remove(&from);
+        return adjacent;
     }
 
-    /// Get valid extensions of `path`, taking into account dependencies and nodes already visited
-    fn continue_path(&self, path: &[Node]) -> Vec<Vec<Node>> {
-        let mut paths: Vec<Vec<Node>> = Vec::new();
-        let keys = HashSet::from_iter(path.iter().cloned());
-        for (next, deps) in self.dependencies.iter() {
+    /// Get valid extensions of `route`, taking into account dependencies and nodes already visited
+    fn continue_route(&self, route: &Route) -> Vec<Route> {
+        let mut routes: Vec<Route> = Vec::new();
+        let keys = HashSet::from_iter(route.iter().cloned());
+        for (next, deps) in self.requirements.iter() {
             if !keys.contains(next) && deps.difference(&keys).count() == 0 {
-                let mut next_path = Vec::new();
-                next_path.extend_from_slice(path);
-                next_path.push(*next);
-                paths.push(next_path);
+                let mut next_route = Route::new();
+                next_route.extend_from_slice(route);
+                next_route.push(*next);
+                routes.push(next_route);
             }
         }
-        return paths;
+        return routes;
     }
 }
 
-impl From<&Map> for PathDB {
+impl From<&Map> for NodeGraph {
     fn from(map: &Map) -> Self {
         // TODO: check than the acyclic graph assumption holds true - should only see each node once
-        let mut paths = PathDB::new();
+        let mut paths = NodeGraph::new();
         let mut queue: VecDeque<(Point2D, Edge, Point2D, Node)> = VecDeque::new();
-        queue.push_back((map.start.clone(), Edge::new(), map.start.clone(), Node::Start));
+        queue.push_back((map.entrance.clone(), Edge::new(), map.entrance.clone(), Node::Entrance));
 
         while let Some((pos, edge, from_pos, from_node)) = queue.pop_front() {
             for d in DIRECTIONS.iter().cloned() {
@@ -190,8 +194,8 @@ impl From<&Map> for PathDB {
                     continue;
                 }
                 match map.get(&next) {
-                    // Shouldn't re-visit start position in flood fill, but let's have an exhaustive match here
-                    Some(TILE_START) => panic!("revisited start location!?!?"),
+                    // Shouldn't re-visit entrance position in flood fill, but let's have an exhaustive match here
+                    Some(TILE_ENTRANCE) => panic!("revisited entrance location!?!?"),
                     // Wall or out of bounds: do nothing
                     Some(TILE_WALL) | None => {},
                     // Floor: just advance one step
@@ -220,32 +224,33 @@ impl From<&Map> for PathDB {
 }
 
 /// Depth-first-search iteration of valid node visit orderings
-struct PathGenerator<'a> {
-    path_db: &'a PathDB,
-    stack: Vec<Vec<Node>>,
+#[derive(Clone,Debug)]
+struct RouteGenerator<'a> {
+    nodegraph: &'a NodeGraph,
+    stack: Vec<Route>,
 }
 
-impl<'a> PathGenerator<'a> {
-    fn new(path_db: &'a PathDB) -> PathGenerator<'a> {
-        PathGenerator {
-            path_db,
-            stack: vec![vec![Node::Start]],
+impl<'a> RouteGenerator<'a> {
+    fn new(nodegraph: &'a NodeGraph) -> RouteGenerator<'a> {
+        RouteGenerator {
+            nodegraph,
+            stack: vec![Route(vec![Node::Entrance])],
         }
     }
 }
 
-impl<'a> Iterator for PathGenerator<'a> {
-    type Item = Vec<Node>;
+impl<'a> Iterator for RouteGenerator<'a> {
+    type Item = Route;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Loop until we return something
         loop {
-            if let Some(path) = self.stack.pop() {
-                let next_paths = self.path_db.continue_path(&path);
-                if next_paths.is_empty() {
-                    break Some(path);
+            if let Some(route) = self.stack.pop() {
+                let next_routes = self.nodegraph.continue_route(&route);
+                if next_routes.is_empty() {
+                    break Some(route);
                 } else {
-                    self.stack.extend(next_paths);
+                    self.stack.extend(next_routes);
                 }
             } else {
                 break None;
@@ -254,58 +259,72 @@ impl<'a> Iterator for PathGenerator<'a> {
     }
 }
 
+
+/// A caching calculator of paths, reachable sets, etc.
 #[derive(Debug)]
-struct Reachable<'a> {
-    path_db: &'a PathDB,
-    cache: HashMap<(Node, Node), HashSet<Node>>,
+struct PathCache<'a> {
+    /// The node graph this path cache relates to (assumes that the node graph is fully populated).
+    nodegraph: &'a NodeGraph,
+    /// See get_reachable().
+    reachable: HashMap<(Node, Node), HashSet<Node>>,
+    /// See get_path().
+    paths: HashMap<(Node, Node), Path>,
 }
 
-/// A caching calculator of reachable node sets for each `from -> to` edge
-impl<'a> Reachable<'a> {
-    fn new(path_db: &'a PathDB) -> Reachable<'a> {
-        Reachable {
-            path_db,
-            cache: HashMap::new(),
+impl<'a> PathCache<'a> {
+    fn new(nodegraph: &'a NodeGraph) -> PathCache<'a> {
+        PathCache {
+            nodegraph,
+            reachable: HashMap::new(),
+            paths: HashMap::new(),
         }
     }
 
-    fn get(&mut self, from: Node, to: Node) -> HashSet<Node> {
-        if let Some(set) = self.cache.get(&(from, to)).cloned() {
+    /// Get the set of nodes reachable in the direction of `from -> to`.
+    ///
+    /// `(from, to)` must be a path segment, i.e. adjacent, not an abstract route segment.
+    fn get_reachable(&mut self, from: Node, to: Node) -> HashSet<Node> {
+        assert!(
+            self.nodegraph.adjacent.get(&from).and_then(|x| x.get(&to)).is_some(),
+            "get_reachable: from and to must be adjacent",
+        );
+        if let Some(set) = self.reachable.get(&(from, to)).cloned() {
             set
         } else {
             let mut set: HashSet<Node> = HashSet::new();
             // Obviously can reach `to` by following `from -> to`
             set.insert(to);
             // Recursively include anything reachable from `to`
-            for node in self.path_db.get_adjacent_nodes(to, from) {
-                let more = self.get(to, node);
+            for node in self.nodegraph.get_adjacent_nodes(to, from) {
+                let more = self.get_reachable(to, node);
                 set.extend(more);
             }
-            self.cache.insert((from, to), set.clone());
+            self.reachable.insert((from, to), set.clone());
             set
         }
     }
 
-    /// Because of the DAG nature of our map, there's only one possible route between 2 nodes
+    /// Get the path to travel the `from -> to` route segment.
+    ///
+    /// Every node is connected to the graph, and the graph has no cycles, so there is exactly one
+    /// non-backtracking route between any 2 nodes.
     fn get_path(&mut self, from: Node, to: Node) -> Path {
+        // TODO: caching
         let mut path = Path {
-            start: from,
-            route: Vec::new(),
+            route: Route(vec![from]),
             cost: 0,
-            requirements: HashSet::new(),
         };
         let mut prev = from;
         let mut curr = from;
         // Loop until we find the destination
         'outer: while curr != to {
             // Look at possible next nodes
-            for next in self.path_db.get_adjacent_nodes(curr, prev) {
+            for next in self.nodegraph.get_adjacent_nodes(curr, prev) {
                 // See if destination is reachable via this node
-                if self.get(curr, next).contains(&to) {
-                    let edge = self.path_db.adjacent.get(&curr).unwrap().get(&next).unwrap();
+                if self.get_reachable(curr, next).contains(&to) {
+                    let edge = self.nodegraph.adjacent.get(&curr).unwrap().get(&next).unwrap();
                     path.route.push(next);
                     path.cost += edge.cost;
-                    path.requirements.extend(edge.requirements.iter());
                     prev = curr;
                     curr = next;
                     continue 'outer;
@@ -315,35 +334,69 @@ impl<'a> Reachable<'a> {
         }
         return path;
     }
+
+    /// Get the concrete path to travel the abstract `route`.
+    fn get_path_from_route(&mut self, route: &Route) -> Path {
+        let mut path = Path {
+            route: Route(vec![route[0]]),
+            cost: 0,
+        };
+        for (from, to) in route.segments() {
+            path += &self.get_path(from, to);
+        }
+        return path;
+    }
 }
 
-#[derive(Debug)]
+
+/// Path: a route where consecutive nodes are always adjacent, with cost calculated too
+#[derive(Clone,Debug)]
 struct Path {
-    start: Node,
-    route: Vec<Node>,
+    route: Route,
     cost: usize,
-    requirements: HashSet<Node>,
 }
+
+impl Path {
+    /// Iterate over `(from, to)` pairs along the path.
+    fn segments<'a>(&'a self) -> impl Iterator<Item=(Node, Node)> + 'a {
+        self.route.windows(2).map(|w| (w[0], w[1]))
+    }
+}
+
+impl ops::Add<&Path> for Path {
+    type Output = Path;
+
+    fn add(self, rhs: &Path) -> Self::Output {
+        assert!(self.route.len() == 0 || rhs.route.len() == 0 || self.route.last() == rhs.route.first());
+        let mut path = self.clone();
+        path += rhs;
+        return path;
+    }
+}
+
+impl ops::AddAssign<&Path> for Path {
+    fn add_assign(&mut self, rhs: &Path) {
+        assert!(self.route.len() == 0 || rhs.route.len() == 0 || self.route.last() == rhs.route.first());
+        self.route.extend(rhs.route.iter().skip(1));
+        self.cost += rhs.cost;
+    }
+}
+
 
 fn shortest_path(filename: &str) -> usize {
     let map = Map::from_data_file(filename);
-    let paths = PathDB::from(&map);
-    println!("paths: {:?}", paths);
-//    let path = paths.topological_sort();
-//    println!("path: {:?}", path);
-    let mut reachable = Reachable::new(&paths);
-    println!("Start -> Key('a') reachable: {:?}", reachable.get(Node::Start, Node::Key('a')));
-    let path_f_to_c = reachable.get_path(Node::Key('f'), Node::Key('c'));
-    println!("Key('f') -> Key('c') route: {:?}", path_f_to_c);
-    let mut pathgen = PathGenerator::new(&paths);
-    for p in pathgen {
-        println!("path: {:?}", p);
-    }
-    0
+    let node_graph = NodeGraph::from(&map);
+    let mut path_cache = PathCache::new(&node_graph);
+    let mut route_gen = RouteGenerator::new(&node_graph);
+    println!("number of routes: {}", route_gen.clone().count());
+    route_gen.map(|r| {
+        println!("route: {:?}", &r);
+        path_cache.get_path_from_route(&r).cost
+    }).min().unwrap()
 }
 
-pub fn part1() -> i32 {
-    0
+pub fn part1() -> usize {
+    shortest_path("day18_example2.txt")
 }
 
 pub fn part2() -> i32 {
@@ -356,12 +409,27 @@ mod tests {
 
     #[test]
     fn test_shortest_path_example1() {
-//        assert_eq!(shortest_path("day18_example1.txt"), 8);
+        assert_eq!(shortest_path("day18_example1.txt"), 8);
     }
 
     #[test]
     fn test_shortest_path_example2() {
         assert_eq!(shortest_path("day18_example2.txt"), 86);
+    }
+
+    #[test]
+    fn test_shortest_path_example3() {
+        assert_eq!(shortest_path("day18_example3.txt"), 132);
+    }
+
+    #[test]
+    fn test_shortest_path_example4() {
+        assert_eq!(shortest_path("day18_example4.txt"), 136);
+    }
+
+    #[test]
+    fn test_shortest_path_example5() {
+        assert_eq!(shortest_path("day18_example5.txt"), 81);
     }
 
     #[test]
