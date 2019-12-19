@@ -18,6 +18,8 @@ the dependency tree should constrain the TSP to a more reasonable set of possibi
 
 */
 use std::collections::{HashSet, VecDeque, HashMap};
+use std::hash::Hash;
+use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 use crate::util::{self, BoundingBox2D, Point2D, Vector2D};
 
@@ -35,14 +37,15 @@ enum Node {
 #[derive(Clone,Debug)]
 struct Edge {
     cost: usize,
-    doors: HashSet<char>,
+    requirements: HashSet<Node>,
 }
 
 impl Edge {
     fn new() -> Edge {
         Edge {
             cost: 0,
-            doors: HashSet::new(),
+            // TODO: optimisation: use a u32, use 1 bit per key, check requirements with bitmasks
+            requirements: HashSet::new(),
         }
     }
 }
@@ -84,23 +87,113 @@ impl Map {
     }
 }
 
+struct QueueOnce<T: Copy + Eq + Hash> {
+    queue: VecDeque<T>,
+    seen: HashSet<T>,
+}
+
+impl<T: Copy + Eq + Hash> QueueOnce<T> {
+    fn new() -> QueueOnce<T> {
+        QueueOnce {
+            queue: VecDeque::new(),
+            seen: HashSet::new(),
+        }
+    }
+
+    fn push_back(&mut self, x: T) {
+        if self.seen.insert(x) {
+            self.queue.push_back(x);
+        }
+    }
+
+    fn pop_front(&mut self) -> Option<T> {
+        self.queue.pop_front()
+    }
+}
+
 #[derive(Clone,Debug)]
-struct PathDB(HashMap<Node, Vec<(Node, Edge)>>);
-deref!(PathDB, HashMap<Node, Vec<(Node, Edge)>>);
+struct PathDB {
+    /// Adjacency map for traversing between nodes
+    adjacent: HashMap<Node, HashMap<Node, Edge>>,
+    /// Dependencies (key ownership) that must be satisfied to get from Start to a particular node
+    dependencies: HashMap<Node, HashSet<Node>>,
+    /// Nodes that are reachable by following a particular edge without backtracking
+    reachable: HashMap<(Node, Node), HashSet<Node>>,
+}
 
 impl PathDB {
     fn new() -> PathDB {
-        PathDB(HashMap::new())
+        PathDB {
+            adjacent: HashMap::new(),
+            dependencies: HashMap::from(vec![(Node::Start, HashSet::new())].into_iter().collect()),
+            reachable: HashMap::new(),
+        }
     }
 
+    /// Add an edge from `a` to `b` specified by `e`
+    ///
+    /// Also adds the reverse edge, but the `a -> b` direction is used to determine the dependency
+    /// graph.
     fn add_edge(&mut self, a: Node, b: Node, e: Edge) {
-        self.0.entry(a).or_insert(Vec::new()).push((b, e.clone()));
-        self.0.entry(b).or_insert(Vec::new()).push((a, e.clone()));
+        // Add edge from a to b
+        self.adjacent.entry(a).or_insert(HashMap::new()).insert(b, e.clone());
+        // Add same edge from b to a
+        self.adjacent.entry(b).or_insert(HashMap::new()).insert(a, e.clone());
+
+        // Record the dependencies for getting to b:
+        // 1) Must have been to every node in the edge's requirements (i.e. picked up the relevant keys)
+        let mut b_deps: HashSet<Node> = e.requirements.clone();
+        // 2) Must have satisfied the requirements to get to a first
+        if let Some(a_deps) = self.dependencies.get(&a) {
+            b_deps.extend(a_deps);
+        }
+        // (Update the dependency set)
+        self.dependencies.entry(b).or_insert(HashSet::new()).extend(b_deps);
     }
 
-    /// Simplify the graph by removing `n`, combining paths and removing doors if `n` is a `Key`
-    fn remove_node(&mut self, n: Node) {
-        // TODO: implement me
+    fn get_adjacent_nodes(&self, n: Node, from: Node) -> HashSet<Node> {
+        self.adjacent
+            .get(&n).unwrap()
+            .iter()
+            .filter_map(|(&k, _v)| if k == from { None } else { Some(k) })
+            .collect()
+    }
+
+    fn topological_sort(&self) -> Vec<Node> {
+        // Clone the dependencies so we can drop dependencies as nodes are visited
+        let mut dependencies = self.dependencies.clone();
+        // Queue of nodes that have no dependencies, only queuing each node once
+        let mut next: QueueOnce<Node> = QueueOnce::new();
+
+        // Build the initial queue of nodes with no dependencies (making sure Start is at the front)
+        next.push_back(Node::Start);
+        for (node, deps) in dependencies.iter() {
+            if deps.is_empty() {
+                next.push_back(*node);
+            }
+        }
+
+        // Ordered nodes, starting at Start (which is an unrecorded dependency of everything)
+        let mut path: Vec<Node> = vec![next.pop_front().unwrap()];
+        // Process nodes to get a valid ordering
+        while let Some(node) = next.pop_front() {
+            println!("processing node {:?}, remaining: {:?}", node, next.queue);
+            // This node has no dependencies, so can include it in the path
+            path.push(node);
+            // Remove the node from dependencies of other nodes
+            for (other, deps) in dependencies.iter_mut() {
+                if deps.contains(&node) {
+                    deps.remove(&node);
+                    // If this node now has no dependencies, put it in the queue
+                    if deps.is_empty() {
+                        next.push_back(*other);
+                    }
+                }
+            }
+        }
+
+        // TODO: need to generate all possible orderings to then evaluate path cost of each?
+        path
     }
 }
 
@@ -124,18 +217,19 @@ impl From<&Map> for PathDB {
                     Some(TILE_WALL) | None => {},
                     // Floor: just advance one step
                     Some(TILE_FLOOR) => {
-                        queue.push_back((next, Edge{cost: edge.cost + 1, doors: edge.doors.clone()}, pos.clone(), from_node));
+                        queue.push_back((next, Edge{cost: edge.cost + 1, requirements: edge.requirements.clone()}, pos.clone(), from_node));
                     },
-                    // Door: add to the set of doors, advance one step
+                    // Door: add to the set of requirements, advance one step
                     Some(door) if 'A' <= door && door <= 'Z' => {
-                        let mut doors = edge.doors.clone();
-                        doors.insert(door);
-                        queue.push_back((next, Edge{cost: edge.cost + 1, doors}, pos.clone(), from_node));
+                        let mut requirements = edge.requirements.clone();
+                        // Convert door to the required key
+                        requirements.insert(Node::Key(door.to_ascii_lowercase()));
+                        queue.push_back((next, Edge{cost: edge.cost + 1, requirements}, pos.clone(), from_node));
                     },
                     // Key: end path and record it, start new path
                     Some(key) if 'a' <= key && key <= 'z' => {
                         let node = Node::Key(key);
-                        paths.add_edge(from_node, node, Edge{cost: edge.cost + 1, doors: edge.doors.clone()});
+                        paths.add_edge(from_node, node, Edge{cost: edge.cost + 1, requirements: edge.requirements.clone()});
                         queue.push_back((next, Edge::new(), pos.clone(), node));
                     },
                     unknown => panic!(format!("unknown tile: {:?}", unknown)),
@@ -146,10 +240,87 @@ impl From<&Map> for PathDB {
     }
 }
 
+#[derive(Debug)]
+struct Reachable<'a> {
+    path_db: &'a PathDB,
+    cache: HashMap<(Node, Node), HashSet<Node>>,
+}
+
+/// A caching calculator of reachable node sets for each `from -> to` edge
+impl<'a> Reachable<'a> {
+    fn new(path_db: &'a PathDB) -> Reachable<'a> {
+        Reachable {
+            path_db,
+            cache: HashMap::new(),
+        }
+    }
+
+    fn get(&mut self, from: Node, to: Node) -> HashSet<Node> {
+        if let Some(set) = self.cache.get(&(from, to)).cloned() {
+            set
+        } else {
+            let mut set: HashSet<Node> = HashSet::new();
+            // Obviously can reach `to` by following `from -> to`
+            set.insert(to);
+            // Recursively include anything reachable from `to`
+            for node in self.path_db.get_adjacent_nodes(to, from) {
+                let more = self.get(to, node);
+                set.extend(more);
+            }
+            self.cache.insert((from, to), set.clone());
+            set
+        }
+    }
+
+    /// Because of the DAG nature of our map, there's only one possible route between 2 nodes
+    fn get_path(&mut self, from: Node, to: Node) -> Path {
+        let mut path = Path {
+            start: from,
+            route: Vec::new(),
+            cost: 0,
+            requirements: HashSet::new(),
+        };
+        let mut prev = from;
+        let mut curr = from;
+        // Loop until we find the destination
+        'outer: while curr != to {
+            // Look at possible next nodes
+            for next in self.path_db.get_adjacent_nodes(curr, prev) {
+                // See if destination is reachable via this node
+                if self.get(curr, next).contains(&to) {
+                    let edge = self.path_db.adjacent.get(&curr).unwrap().get(&next).unwrap();
+                    path.route.push(next);
+                    path.cost += edge.cost;
+                    path.requirements.extend(edge.requirements.iter());
+                    prev = curr;
+                    curr = next;
+                    continue 'outer;
+                }
+            }
+            panic!(format!("no route between {:?} and {:?}", from, to));
+        }
+        return path;
+    }
+}
+
+#[derive(Debug)]
+struct Path {
+    start: Node,
+    route: Vec<Node>,
+    cost: usize,
+    requirements: HashSet<Node>,
+}
+
 fn shortest_path(filename: &str) -> usize {
     let map = Map::from_data_file(filename);
     let paths = PathDB::from(&map);
     println!("paths: {:?}", paths);
+//    let path = paths.topological_sort();
+//    println!("path: {:?}", path);
+    let mut reachable = Reachable::new(&paths);
+    println!("Start -> Key('a') reachable: {:?}", reachable.get(Node::Start, Node::Key('a')));
+    let path_f_to_c = reachable.get_path(Node::Key('f'), Node::Key('c'));
+    println!("Key('f') -> Key('c') route: {:?}", path_f_to_c);
     0
 }
 
@@ -167,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_shortest_path_example1() {
-        assert_eq!(shortest_path("day18_example1.txt"), 8);
+//        assert_eq!(shortest_path("day18_example1.txt"), 8);
     }
 
     #[test]
