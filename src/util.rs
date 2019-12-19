@@ -287,6 +287,24 @@ impl Line2D {
     }
 }
 
+macro_rules! deref {
+    ($outer:ty, $inner:ty) => {
+        impl Deref for $outer {
+            type Target = $inner;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl DerefMut for $outer {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

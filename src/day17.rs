@@ -105,20 +105,7 @@ type CompressedSequence = (Vec<char>, BTreeMap<char, SequenceDef>);
 
 #[derive(Debug)]
 struct Path(Vec<Command>);
-
-impl Deref for Path {
-    type Target = Vec<Command>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Path {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+deref!(Path, Vec<Command>);
 
 impl From<&[Command]> for Path {
     fn from(commands: &[Command]) -> Self {
