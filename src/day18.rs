@@ -162,21 +162,6 @@ impl NodeGraph {
         adjacent.remove(&from);
         return adjacent;
     }
-
-    /// Get valid extensions of `route`, taking into account dependencies and nodes already visited
-    fn continue_route(&self, route: &Route) -> Vec<Route> {
-        let mut routes: Vec<Route> = Vec::new();
-        let keys = HashSet::from_iter(route.iter().cloned());
-        for (next, deps) in self.requirements.iter() {
-            if !keys.contains(next) && deps.difference(&keys).count() == 0 {
-                let mut next_route = Route::new();
-                next_route.extend_from_slice(route);
-                next_route.push(*next);
-                routes.push(next_route);
-            }
-        }
-        return routes;
-    }
 }
 
 impl From<&Map> for NodeGraph {
@@ -185,17 +170,20 @@ impl From<&Map> for NodeGraph {
         let mut paths = NodeGraph::new();
         let mut queue: VecDeque<(Point2D, Edge, Point2D, Node)> = VecDeque::new();
         queue.push_back((map.entrance.clone(), Edge::new(), map.entrance.clone(), Node::Entrance));
+        let mut seen: HashSet<Point2D> = HashSet::new();
+        seen.insert(map.entrance.clone());
 
         while let Some((pos, edge, from_pos, from_node)) = queue.pop_front() {
             for d in DIRECTIONS.iter().cloned() {
                 let next = pos + d;
                 // Don't backtrack
-                if next == from_pos {
+                if seen.contains(&next) {
                     continue;
                 }
+                seen.insert(next);
                 match map.get(&next) {
                     // Shouldn't re-visit entrance position in flood fill, but let's have an exhaustive match here
-                    Some(TILE_ENTRANCE) => panic!("revisited entrance location!?!?"),
+                    Some(TILE_ENTRANCE) => panic!(format!("revisited entrance location!?!? from {:?} {:?}", from_pos, from_node)),
                     // Wall or out of bounds: do nothing
                     Some(TILE_WALL) | None => {},
                     // Floor: just advance one step
@@ -224,16 +212,16 @@ impl From<&Map> for NodeGraph {
 }
 
 /// Depth-first-search iteration of valid node visit orderings
-#[derive(Clone,Debug)]
+#[derive(Debug)]
 struct RouteGenerator<'a> {
-    nodegraph: &'a NodeGraph,
+    path_cache: &'a mut PathCache<'a>,
     stack: Vec<Route>,
 }
 
 impl<'a> RouteGenerator<'a> {
-    fn new(nodegraph: &'a NodeGraph) -> RouteGenerator<'a> {
+    fn new(path_cache: &'a mut PathCache<'a>) -> RouteGenerator<'a> {
         RouteGenerator {
-            nodegraph,
+            path_cache,
             stack: vec![Route(vec![Node::Entrance])],
         }
     }
@@ -246,7 +234,7 @@ impl<'a> Iterator for RouteGenerator<'a> {
         // Loop until we return something
         loop {
             if let Some(route) = self.stack.pop() {
-                let next_routes = self.nodegraph.continue_route(&route);
+                let next_routes = self.path_cache.continue_route(&route);
                 if next_routes.is_empty() {
                     break Some(route);
                 } else {
@@ -302,6 +290,29 @@ impl<'a> PathCache<'a> {
             self.reachable.insert((from, to), set.clone());
             set
         }
+    }
+
+    /// Get valid extensions of `route`, taking into account dependencies and nodes already visited
+    fn continue_route(&mut self, route: &Route) -> Vec<Route> {
+        let last = route.last().unwrap();
+        let mut routes: Vec<Route> = Vec::new();
+        let keys = HashSet::from_iter(route.iter().cloned());
+        for (next, reqs) in self.nodegraph.requirements.iter() {
+            // Already visited this one? Don't want to revisit nodes for no reason, so skip it.
+            if keys.contains(next) { continue; }
+            // Still got unmet requirements? Not a valid route, so skip it.
+            if reqs.difference(&keys).count() > 0 { continue; }
+            // Visits other nodes we haven't visited yet? Cut down some of the "factorial time" by
+            // avoiding longer paths that visit the same set of nodes.
+            let path = self.get_path(*last, *next);
+            if path.route[.. path.route.len() - 1].iter().any(|n| !keys.contains(n)) { continue; }
+            // Create a new route if we survived this far!
+            let mut next_route = Route::new();
+            next_route.extend_from_slice(route);
+            next_route.push(*next);
+            routes.push(next_route);
+        }
+        return routes;
     }
 
     /// Get the path to travel the `from -> to` route segment.
@@ -386,17 +397,27 @@ impl ops::AddAssign<&Path> for Path {
 fn shortest_path(filename: &str) -> usize {
     let map = Map::from_data_file(filename);
     let node_graph = NodeGraph::from(&map);
-    let mut path_cache = PathCache::new(&node_graph);
-    let mut route_gen = RouteGenerator::new(&node_graph);
-    println!("number of routes: {}", route_gen.clone().count());
-    route_gen.map(|r| {
-        println!("route: {:?}", &r);
-        path_cache.get_path_from_route(&r).cost
-    }).min().unwrap()
+    {
+        let mut path_cache = PathCache::new(&node_graph);
+        let route_gen = RouteGenerator::new(&mut path_cache);
+        println!("number of routes: {}", route_gen.count());
+    }
+    {
+        let mut path_cache = PathCache::new(&node_graph);
+        let route_gen = RouteGenerator::new(&mut path_cache);
+        for r in route_gen {
+            println!("route: {:?}", &r);
+        }
+    }
+//    route_gen.map(|r| {
+//        println!("route: {:?}", &r);
+////        path_cache.get_path_from_route(&r).cost
+//    }).min().unwrap()
+    0
 }
 
 pub fn part1() -> usize {
-    shortest_path("day18_example2.txt")
+    shortest_path("day18_example4.txt")
 }
 
 pub fn part2() -> i32 {
