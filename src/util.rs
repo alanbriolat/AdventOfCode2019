@@ -287,6 +287,39 @@ impl Line2D {
     }
 }
 
+#[derive(Debug)]
+pub struct Grid2D<T> {
+    data: Vec<T>,
+    width: usize,
+    height: usize,
+    bbox: BoundingBox2D,
+}
+
+impl<T> Grid2D<T> {
+    pub fn new(width: usize, height: usize, data: impl Iterator<Item=T>) -> Grid2D<T> {
+        let mut bbox = BoundingBox2D::new(&point!(0, 0));
+        bbox.include(&point!(width as i32 - 1, height as i32 - 1));
+        Grid2D {
+            data: data.collect(),
+            width,
+            height,
+            bbox,
+        }
+    }
+
+    pub fn get(&self, p: &Point2D) -> Option<&T> {
+        if !self.bbox.contains(p) {
+            None
+        } else {
+            Some(&self.data[p.y as usize * self.width + p.x as usize])
+        }
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item=(Point2D, &T)> + 'a {
+        self.bbox.iter().map(move |p| (p, self.get(&p).unwrap()))
+    }
+}
+
 macro_rules! deref {
     ($outer:ty, $inner:ty) => {
         impl Deref for $outer {

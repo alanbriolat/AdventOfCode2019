@@ -10,6 +10,7 @@ edition = "2018"
 itertools = "0.8.2"
 permutohedron = "0.2.4"
 num = "0.2.0"
+pathfinding = "2.0.3"
 
 [dev-dependencies]
 criterion = "0.3.0"
